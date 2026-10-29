@@ -1,0 +1,52 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+.env
+.venv
+venv/
+ENV/
+
+# IDE / OS
+.DS_Store
+.idea/
+.vscode/
+
+# Project Specific
+config.json
+SmartMF_App/
+SmartMF_Test_Environment/
+SmartMF.spec
+api_key.txt
+
+TestFolder/
+action_log.*
+*.spec
+*_backup.py
+dummy.pdf
+invalid.pdf
+/test_*.py
+à¸à¸à¸§/
+
+# Test artifacts
+.pytest_cache/
+test-results.xml

@@ -1,0 +1,10 @@
+# Packages for linting and testing core/ in CI (no GUI or build tools)
+pillow
+pillow_heif
+google-genai
+moviepy
+docx2pdf
+pypdf
+watchdog
+pytest
+flake8

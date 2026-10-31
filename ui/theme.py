@@ -1,4 +1,5 @@
 """Colours, fonts and icon helpers shared by every page. Tuples are (light, dark)."""
+import customtkinter as ctk
 
 BG_MAIN = ("#F3F5F9", "#0F172A")
 BG_CARD = ("#FFFFFF", "#1E293B")
@@ -19,3 +20,16 @@ CHART_DOCUMENTS = "#7C3AED"
 CHART_MEDIA = "#10B981"
 CHART_OTHERS = "#F472B6"
 CHART_EMPTY = ("#E5E7EB", "#475569")
+
+FONT_FAMILY = "Helvetica"
+
+
+def font(size=13, weight="normal", slant="roman"):
+    return ctk.CTkFont(family=FONT_FAMILY, size=size, weight=weight, slant=slant)
+
+
+def resolve_color(color):
+    """PIL needs one colour; pick the light or dark half of a theme tuple."""
+    if isinstance(color, tuple):
+        return color[1] if ctk.get_appearance_mode() == "Dark" else color[0]
+    return color

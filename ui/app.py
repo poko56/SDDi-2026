@@ -5,7 +5,7 @@ import customtkinter as ctk
 from PIL import Image
 
 from core.paths import resource_path
-from ui.theme import ACCENT_PRIMARY, BG_MAIN, SIDEBAR_BG, TEXT_MUTED, create_icon_image, font
+from ui.theme import ACCENT_PRIMARY, ACCENT_SOFT, BG_CARD, BG_MAIN, SIDEBAR_BG, TEXT_MAIN, TEXT_MUTED, create_icon_image, font
 
 PREFERRED_SIZE = (1200, 800)
 MIN_SIZE = (960, 600)
@@ -35,6 +35,7 @@ class ZipZapApp(ctk.CTk):
         self.grid_rowconfigure(0, weight=1)
         self.grid_columnconfigure(1, weight=1)
         self._build_sidebar()
+        self._build_content_area()
 
     # ---------- Layout ----------
 
@@ -87,3 +88,31 @@ class ZipZapApp(ctk.CTk):
             btn.grid(row=row, column=0, padx=15, pady=5, sticky="ew")
             btn.icons = (create_icon_image(icon, ACCENT_PRIMARY), create_icon_image(icon, TEXT_MUTED))
             self._nav_buttons[key] = btn
+
+    def _build_content_area(self):
+        main = ctk.CTkFrame(self, fg_color=BG_MAIN, corner_radius=0)
+        main.grid(row=0, column=1, sticky="nsew")
+
+        topbar = ctk.CTkFrame(main, height=60, fg_color=BG_CARD, corner_radius=0)
+        topbar.pack(fill="x")
+        self.lbl_page_title = ctk.CTkLabel(topbar, text="", font=font(20, "bold"), text_color=TEXT_MAIN)
+        self.lbl_page_title.pack(side="left", padx=30, pady=15)
+
+        container = ctk.CTkFrame(main, fg_color="transparent")
+        container.pack(fill="both", expand=True)
+        self.pages = {key: page_cls(container, self) for key, _, _, page_cls in self.PAGES}
+
+    def show_page(self, key):
+        for page_key, btn in self._nav_buttons.items():
+            active = page_key == key
+            btn.configure(
+                fg_color=ACCENT_SOFT if active else "transparent",
+                text_color=ACCENT_PRIMARY if active else TEXT_MUTED,
+                image=btn.icons[0] if active else btn.icons[1],
+            )
+        for page in self.pages.values():
+            page.pack_forget()
+        page = self.pages[key]
+        self.lbl_page_title.configure(text=page.title)
+        page.pack(fill="both", expand=True, padx=30, pady=20)
+        page.on_show()

@@ -79,7 +79,7 @@ class SettingsPage(BasePage):
             text, color = "☁️ รายชื่อไฟล์และเนื้อหาไฟล์ที่ให้ AI อ่านจะถูกส่งไปประมวลผลที่ Google", TEXT_MUTED
         self.lbl_privacy.configure(text=text, text_color=color)
 
-    # ---------- Gemini ----------
+    # ---------- Gemini ---------- //
 
     def _build_api_card(self, parent):
         box = self._section(parent, "Gemini API Key",

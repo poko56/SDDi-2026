@@ -2,6 +2,7 @@ import os
 import queue
 import threading
 import tkinter as tk
+from datetime import datetime
 
 import customtkinter as ctk
 from PIL import Image
@@ -28,6 +29,9 @@ class ZipZapApp(ctk.CTk):
     def __init__(self, services):
         super().__init__()
         self.services = services
+        self.current_folder = ""
+        self._folder_listeners = []
+        self._log_listeners = []
         self._ui_queue = queue.Queue()
 
         ctk.set_appearance_mode(services.config.get("theme"))
@@ -89,6 +93,25 @@ class ZipZapApp(ctk.CTk):
                 self.call_in_ui(on_done, result)
 
         threading.Thread(target=worker, daemon=True).start()
+
+    # ---------- Shared state (Observer) ----------
+
+    def on_folder_change(self, listener):
+        self._folder_listeners.append(listener)
+
+    def set_folder(self, folder):
+        self.current_folder = folder
+        for listener in self._folder_listeners:
+            listener(folder)
+
+    def on_log(self, listener):
+        self._log_listeners.append(listener)
+
+    def log(self, message):
+        """Add a line to the activity logs. Safe to call from any thread."""
+        line = f"[{datetime.now().strftime('%H:%M:%S')}] {message}\n"
+        for listener in self._log_listeners:
+            self.call_in_ui(listener, line)
 
     # ---------- Layout ----------
 

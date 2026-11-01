@@ -1,4 +1,6 @@
 import os
+import queue
+import threading
 import tkinter as tk
 
 import customtkinter as ctk
@@ -7,6 +9,7 @@ from PIL import Image
 from core.paths import resource_path
 from ui.theme import ACCENT_PRIMARY, ACCENT_SOFT, BG_CARD, BG_MAIN, SIDEBAR_BG, TEXT_MAIN, TEXT_MUTED, create_icon_image, font
 
+UI_POLL_MS = 50
 PREFERRED_SIZE = (1200, 800)
 MIN_SIZE = (960, 600)
 SCREEN_MARGIN = (40, 100)  # Leave room for the menu bar, dock or taskbar
@@ -25,6 +28,7 @@ class ZipZapApp(ctk.CTk):
     def __init__(self, services):
         super().__init__()
         self.services = services
+        self._ui_queue = queue.Queue()
 
         ctk.set_appearance_mode(services.config.get("theme"))
         self.title("ZipZap - Smart File Manager")
@@ -36,6 +40,55 @@ class ZipZapApp(ctk.CTk):
         self.grid_columnconfigure(1, weight=1)
         self._build_sidebar()
         self._build_content_area()
+
+        self.after(UI_POLL_MS, self._drain_ui_queue)
+
+    # ---------- Threading ----------
+
+    def call_in_ui(self, func, *args):
+        """Schedule func(*args) on the Tk main thread. Safe to call from any thread."""
+        self._ui_queue.put((func, args))
+
+    def _drain_ui_queue(self):
+        try:
+            while True:
+                try:
+                    func, args = self._ui_queue.get_nowait()
+                except queue.Empty:
+                    break
+                self._run_ui_callback(func, args)
+        finally:
+            # Always re-arm: if this stopped, every later background result would be lost
+            self.after(UI_POLL_MS, self._drain_ui_queue)
+
+    def _run_ui_callback(self, func, args):
+        try:
+            func(*args)
+        except tk.TclError:
+            pass  # The widget was destroyed before the update arrived
+        except Exception as e:  # One failing update must not block the ones after it
+            self.services.logger.log_action("ERROR", f"UI update {getattr(func, '__name__', func)} failed: {e!r}")
+            if func not in self._log_listeners:  # Reporting a broken log view through itself would loop
+                self.log(f"❌ เกิดข้อผิดพลาดในหน้าจอ: {e}")
+
+    def run_background(self, task, on_done=None, on_error=None):
+        """Run task() on a worker thread.
+
+        Its result goes to on_done (or the exception to on_error), called on the UI thread.
+        """
+        def worker():
+            try:
+                result = task()
+            except Exception as e:  # Report any worker failure instead of losing it silently
+                if on_error:
+                    self.call_in_ui(on_error, e)
+                else:
+                    self.log(f"❌ เกิดข้อผิดพลาด: {e}")
+                return
+            if on_done:
+                self.call_in_ui(on_done, result)
+
+        threading.Thread(target=worker, daemon=True).start()
 
     # ---------- Layout ----------
 

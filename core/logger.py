@@ -1,4 +1,5 @@
 import datetime
+import json
 import threading
 
 
@@ -24,3 +25,29 @@ class ActionLogger:
             except OSError:
                 # Logging must never break the operation being logged
                 pass
+
+    def _read_moves(self):
+        try:
+            with open(self.log_json, "r", encoding="utf-8") as f:
+                moves = json.load(f)
+            return moves if isinstance(moves, list) else []
+        except FileNotFoundError:
+            return []
+        except (OSError, json.JSONDecodeError):
+            return []
+
+    def _write_moves(self, moves):
+        with open(self.log_json, "w", encoding="utf-8") as f:
+            json.dump(moves, f, ensure_ascii=False, indent=4)
+
+    def log_move(self, original_path, new_path):
+        """Record a move/rename so undo_last_action() can reverse it."""
+        with self._lock:
+            moves = self._read_moves()
+            moves.append({
+                "timestamp": self.get_timestamp(),
+                "original_path": original_path,
+                "new_path": new_path,
+            })
+            self._write_moves(moves)
+        self.log_action("MOVE/RENAME", f"From '{original_path}' -> '{new_path}'")

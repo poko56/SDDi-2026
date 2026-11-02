@@ -5,6 +5,7 @@ from core.config import ConfigManager
 from core.exclusion import ExclusionPolicy
 from core.logger import ActionLogger
 from core.paths import user_data_path
+from core.stats import StorageAnalyzer
 
 
 @dataclass
@@ -12,6 +13,7 @@ class AppServices:
     config: ConfigManager
     logger: ActionLogger
     exclusion: ExclusionPolicy
+    analyzer: StorageAnalyzer
 
     def set_excluded_folders(self, folders):
         self.config.set("excluded_folders", folders)
@@ -26,4 +28,5 @@ def build_services(config_path=None, log_txt=None, log_json=None):
         config=config,
         logger=logger,
         exclusion=exclusion,
+        analyzer=StorageAnalyzer(),
     )

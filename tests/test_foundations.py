@@ -1,9 +1,12 @@
+import json
 import os
+import stat
 import sys
 
 import pytest
 
 from conftest import write
+from core.config import ConfigManager
 from core.file_types import category_of, format_size, is_junk
 from core.paths import safe_join, unique_path
 
@@ -61,3 +64,44 @@ def test_is_junk():
 ])
 def test_format_size(size, text):
     assert format_size(size) == text
+
+
+# ---------- ConfigManager ----------
+
+def test_config_defaults_when_missing(tmp_path):
+    config = ConfigManager(str(tmp_path / "config.json"))
+    assert config.get("theme") == "Light"
+    assert config.get("excluded_folders") == []
+
+
+def test_config_survives_corrupt_file(tmp_path):
+    path = tmp_path / "config.json"
+    path.write_text("{broken")
+    assert ConfigManager(str(path)).get("theme") == "Light"
+
+
+def test_config_set_persists(tmp_path):
+    path = tmp_path / "sub" / "config.json"
+    ConfigManager(str(path)).set("theme", "Dark")
+
+    assert ConfigManager(str(path)).get("theme") == "Dark"
+    assert json.loads(path.read_text())["theme"] == "Dark"
+
+
+@pytest.mark.skipif(sys.platform.startswith("win"), reason="POSIX permissions")
+def test_config_file_is_private(tmp_path):
+    path = tmp_path / "config.json"
+    ConfigManager(str(path)).set("gemini_api_key", "secret")
+    assert stat.S_IMODE(os.stat(path).st_mode) == 0o600
+
+
+def test_api_key_prefers_saved_key(tmp_path, monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "from-env")
+    config = ConfigManager(str(tmp_path / "config.json"))
+    config.set("gemini_api_key", "  saved  ")
+    assert config.resolve_api_key() == "saved"
+
+
+def test_api_key_falls_back_to_env(tmp_path, monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "from-env")
+    assert ConfigManager(str(tmp_path / "config.json")).resolve_api_key() == "from-env"

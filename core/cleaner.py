@@ -1,4 +1,5 @@
 import os
+import time
 from dataclasses import dataclass
 
 from core.exclusion import ExclusionPolicy
@@ -53,7 +54,12 @@ class StorageCleaner:
             return []
 
         results = []
+        min_large_bytes = options.large_min_mb * 1024 * 1024
+        cutoff = time.time() - options.large_min_days * 24 * 3600
+
         for path, st in self._iter_files(folder_path):
             if options.junk and is_junk(path):
                 results.append(ScanResult(path, st.st_size, "junk"))
+            if options.large and st.st_size > min_large_bytes and st.st_mtime < cutoff:
+                results.append(ScanResult(path, st.st_size, "large"))
         return results

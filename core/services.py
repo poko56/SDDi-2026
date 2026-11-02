@@ -1,6 +1,7 @@
 """Composition root: builds every service once and wires their dependencies."""
 from dataclasses import dataclass
 
+from core.cleaner import StorageCleaner
 from core.config import ConfigManager
 from core.exclusion import ExclusionPolicy
 from core.logger import ActionLogger
@@ -13,6 +14,7 @@ class AppServices:
     config: ConfigManager
     logger: ActionLogger
     exclusion: ExclusionPolicy
+    cleaner: StorageCleaner
     analyzer: StorageAnalyzer
 
     def set_excluded_folders(self, folders):
@@ -28,5 +30,6 @@ def build_services(config_path=None, log_txt=None, log_json=None):
         config=config,
         logger=logger,
         exclusion=exclusion,
+        cleaner=StorageCleaner(logger, exclusion),
         analyzer=StorageAnalyzer(),
     )

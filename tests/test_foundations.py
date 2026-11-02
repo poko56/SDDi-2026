@@ -1,3 +1,4 @@
+"""Tests for the small shared building blocks: paths, exclusions, file types, config, stats."""
 import json
 import os
 import stat
@@ -7,6 +8,7 @@ import pytest
 
 from conftest import write
 from core.config import ConfigManager
+from core.exclusion import ExclusionPolicy
 from core.file_types import category_of, format_size, is_junk
 from core.paths import safe_join, unique_path
 
@@ -42,6 +44,24 @@ def test_unique_path(workdir):
     write(target)
     write(workdir / "a_1.txt")
     assert unique_path(str(target)) == str(workdir / "a_2.txt")
+
+
+# ---------- ExclusionPolicy ----------
+
+def test_exclusion_matches_folder_and_children(workdir):
+    policy = ExclusionPolicy([str(workdir / "private")])
+    assert policy.is_excluded(str(workdir / "private"))
+    assert policy.is_excluded(str(workdir / "private" / "deep" / "a.txt"))
+    assert not policy.is_excluded(str(workdir / "private_other" / "a.txt"))
+    assert not policy.is_excluded(str(workdir / "a.txt"))
+
+
+def test_exclusion_update_applies_to_all_holders(workdir):
+    policy = ExclusionPolicy()
+    assert not policy.is_excluded(str(workdir / "a.txt"))
+    policy.update([str(workdir)])
+    assert policy.is_excluded(str(workdir / "a.txt"))
+    assert policy.folders == [os.path.abspath(workdir)]
 
 
 # ---------- file types ----------

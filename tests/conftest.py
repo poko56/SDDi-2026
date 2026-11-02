@@ -5,6 +5,14 @@ import pytest
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
+from core.logger import ActionLogger  # noqa: E402
+
+
+@pytest.fixture
+def logger(tmp_path):
+    """ActionLogger that writes into a temp dir instead of ~/.zipzap."""
+    return ActionLogger(str(tmp_path / "action_log.txt"), str(tmp_path / "action_log.json"))
+
 
 @pytest.fixture
 def workdir(tmp_path):

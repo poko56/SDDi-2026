@@ -1,5 +1,7 @@
 import datetime
 import json
+import os
+import shutil
 import threading
 
 
@@ -51,3 +53,29 @@ class ActionLogger:
             })
             self._write_moves(moves)
         self.log_action("MOVE/RENAME", f"From '{original_path}' -> '{new_path}'")
+
+    def undo_last_action(self):
+        """Move the most recently moved/renamed file back to where it was."""
+        with self._lock:
+            if not os.path.exists(self.log_json):
+                return False, "ไม่พบประวัติการทำงานใดๆ"
+            moves = self._read_moves()
+            if not moves:
+                return False, "ไม่มีประวัติให้ย้อนกลับแล้ว"
+
+            last = moves.pop()
+            original_path, new_path = last["original_path"], last["new_path"]
+            try:
+                if not os.path.exists(new_path):
+                    self._write_moves(moves)
+                    return False, f"หาไฟล์ {new_path} ไม่พบ ไม่สามารถย้อนกลับได้"
+                if os.path.exists(original_path):
+                    return False, f"มีไฟล์ชื่อ {os.path.basename(original_path)} อยู่ที่เดิมแล้ว"
+                os.makedirs(os.path.dirname(original_path), exist_ok=True)
+                shutil.move(new_path, original_path)
+                self._write_moves(moves)
+            except OSError as e:
+                return False, f"เกิดข้อผิดพลาดในการย้อนกลับ: {e}"
+
+        self.log_action("UNDO", f"Reverted '{new_path}' -> '{original_path}'")
+        return True, f"ย้อนกลับสำเร็จ ไฟล์กลับไปที่ {original_path}"

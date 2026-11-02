@@ -10,7 +10,8 @@ from conftest import write
 from core.config import ConfigManager
 from core.exclusion import ExclusionPolicy
 from core.file_types import category_of, format_size, is_junk
-from core.paths import safe_join, unique_path
+from core.paths import TRASH_DIR_NAME, safe_join, unique_path
+from core.stats import StorageAnalyzer
 
 
 # ---------- safe_join ----------
@@ -34,6 +35,27 @@ def test_safe_join_rejects_symlink_escape(workdir, tmp_path):
 
 def test_safe_join_without_root():
     assert safe_join("", "a.txt") is None
+
+
+# ---------- StorageAnalyzer ----------
+
+def test_storage_stats_by_category(workdir):
+    write(workdir / "a.pdf", "x" * 10)
+    write(workdir / "sub" / "b.jpg", "x" * 20)
+    write(workdir / "sub" / "deeper" / "c.mp3", "x" * 5)
+    write(workdir / "d.zip", "x" * 7)
+    write(workdir / TRASH_DIR_NAME / "e.pdf", "x" * 100)
+
+    stats = StorageAnalyzer().analyze(str(workdir))
+
+    assert stats.file_count == 4
+    assert (stats.documents_bytes, stats.media_bytes, stats.other_bytes) == (10, 25, 7)
+    assert stats.total_bytes == 42
+    assert stats.disk_free_bytes > 0
+
+
+def test_storage_stats_missing_folder(workdir):
+    assert StorageAnalyzer().analyze(str(workdir / "nope")).file_count == 0
 
 
 # ---------- unique_path ----------

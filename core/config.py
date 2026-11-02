@@ -1,6 +1,10 @@
 import json
 import os
 
+from core.paths import is_frozen, resource_path
+
+API_KEY_ENV_VAR = "GEMINI_API_KEY"
+
 
 class ConfigManager:
     """Loads and saves user settings (theme, API key, excluded folders) as JSON."""
@@ -45,3 +49,22 @@ class ConfigManager:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(self._data, f, ensure_ascii=False, indent=4)
         os.replace(tmp_path, self.path)
+
+    def resolve_api_key(self):
+        """Key typed in Settings, else the GEMINI_API_KEY env var, else a developer's local api_key.txt.
+
+        Release builds never bundle a key: each user supplies their own.
+        """
+        key = (self.get("gemini_api_key") or "").strip()
+        if key:
+            return key
+        key = os.environ.get(API_KEY_ENV_VAR, "").strip()
+        if key:
+            return key
+        if not is_frozen():
+            try:
+                with open(resource_path("api_key.txt"), "r", encoding="utf-8") as f:
+                    return f.read().strip()
+            except OSError:
+                pass
+        return ""

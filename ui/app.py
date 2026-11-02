@@ -8,7 +8,8 @@ import customtkinter as ctk
 from PIL import Image
 
 from core.paths import resource_path
-from ui.theme import ACCENT_PRIMARY, ACCENT_SOFT, BG_CARD, BG_MAIN, SIDEBAR_BG, TEXT_MAIN, TEXT_MUTED, create_icon_image, font
+from ui.pages.dashboard import DashboardPage
+from ui.theme import ACCENT_PRIMARY, ACCENT_SOFT, BG_CARD, BG_MAIN, SIDEBAR_BG, TEXT_MAIN, TEXT_MUTED, Icons, create_icon_image, font
 
 UI_POLL_MS = 50
 PREFERRED_SIZE = (1200, 800)
@@ -24,7 +25,9 @@ class ZipZapApp(ctk.CTk):
     can be added or removed without touching the others.
     """
 
-    PAGES = []
+    PAGES = [
+        ("dashboard", "Dashboard", Icons.DASHBOARD, DashboardPage),
+    ]
 
     def __init__(self, services):
         super().__init__()
@@ -46,6 +49,7 @@ class ZipZapApp(ctk.CTk):
         self._build_content_area()
 
         self.after(UI_POLL_MS, self._drain_ui_queue)
+        self.show_page("dashboard")
 
     # ---------- Threading ----------
 

@@ -11,6 +11,7 @@ from core.paths import unique_path
 register_heif_opener()
 
 SAME_AS_SOURCE = None
+VIDEO_EXTENSIONS = (".mp4", ".mov", ".mkv", ".avi")
 WORD_SANDBOX_DIR = os.path.expanduser("~/Library/Containers/com.microsoft.Word/Data/Documents/")
 
 
@@ -50,6 +51,10 @@ class FileConverter:
                     ".png": lambda p, out: self.convert_image(p, "PNG", out),
                     "Compress (Keep format)": lambda p, out: self.compress_image(p, 5, out),
                 },
+            },
+            "Media": {
+                "filetypes": [("Video Files", "*.mp4 *.mov *.mkv *.avi")],
+                "targets": {".mp3": self.extract_audio},
             },
         }
 
@@ -139,4 +144,21 @@ class FileConverter:
         if not os.path.exists(output_path):
             return False, "แปลงเป็น PDF ไม่สำเร็จ: Word ไม่ได้สร้างไฟล์ PDF"
         self.logger.log_action("CONVERT_PDF", f"Converted {os.path.basename(input_path)} to PDF")
+        return True, output_path
+
+    def extract_audio(self, input_path, output_dir=SAME_AS_SOURCE):
+        """Extract the audio track of a video as MP3."""
+        if not input_path.lower().endswith(VIDEO_EXTENSIONS):
+            return False, "ไม่รองรับไฟล์วิดีโอนามสกุลนี้"
+        output_path = self._output_path(input_path, output_dir, ".mp3")
+        try:
+            from moviepy import VideoFileClip  # Imported lazily: loading moviepy slows app start-up
+
+            with VideoFileClip(input_path) as video:
+                if video.audio is None:
+                    return False, "วิดีโอนี้ไม่มีเสียง"
+                video.audio.write_audiofile(output_path, logger=None)
+        except Exception as e:  # moviepy/ffmpeg raise OSError, IOError, KeyError... for bad files
+            return False, f"ดึงเสียงไม่สำเร็จ: {e}"
+        self.logger.log_action("EXTRACT_AUDIO", f"Extracted audio from {os.path.basename(input_path)}")
         return True, output_path

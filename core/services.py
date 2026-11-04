@@ -3,6 +3,7 @@ from dataclasses import dataclass
 
 from core.cleaner import StorageCleaner
 from core.config import ConfigManager
+from core.converter import FileConverter
 from core.exclusion import ExclusionPolicy
 from core.logger import ActionLogger
 from core.organizer import FileOrganizer
@@ -17,6 +18,7 @@ class AppServices:
     exclusion: ExclusionPolicy
     cleaner: StorageCleaner
     organizer: FileOrganizer
+    converter: FileConverter
     analyzer: StorageAnalyzer
 
     def set_excluded_folders(self, folders):
@@ -34,5 +36,6 @@ def build_services(config_path=None, log_txt=None, log_json=None):
         exclusion=exclusion,
         cleaner=StorageCleaner(logger, exclusion),
         organizer=FileOrganizer(logger, exclusion=exclusion),
+        converter=FileConverter(logger),
         analyzer=StorageAnalyzer(),
     )

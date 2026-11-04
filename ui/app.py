@@ -9,7 +9,8 @@ from PIL import Image
 
 from core.paths import resource_path
 from ui.pages.dashboard import DashboardPage
-from ui.theme import ACCENT_PRIMARY, ACCENT_SOFT, BG_CARD, BG_MAIN, SIDEBAR_BG, TEXT_MAIN, TEXT_MUTED, Icons, create_icon_image, font
+from ui.theme import (ACCENT_PRIMARY, ACCENT_SOFT, BG_CARD, BG_MAIN, SIDEBAR_BG, TEXT_MAIN, TEXT_MUTED, Icons,
+                      create_icon_image, font)
 
 UI_POLL_MS = 50
 PREFERRED_SIZE = (1200, 800)

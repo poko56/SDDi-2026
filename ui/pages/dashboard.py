@@ -4,7 +4,8 @@ import customtkinter as ctk
 
 from core.file_types import format_size
 from ui.pages.base import BasePage
-from ui.theme import ACCENT_HOVER, ACCENT_PRIMARY, CHART_DOCUMENTS, CHART_EMPTY, CHART_MEDIA, CHART_OTHERS, TEXT_MAIN, TEXT_MUTED, font
+from ui.theme import (ACCENT_HOVER, ACCENT_PRIMARY, CHART_DOCUMENTS, CHART_EMPTY, CHART_MEDIA, CHART_OTHERS,
+                      TEXT_MAIN, TEXT_MUTED, font)
 from ui.widgets import card, render_donut
 
 

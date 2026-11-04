@@ -27,6 +27,7 @@ class FileConverter:
                 "targets": {
                     ".jpg": lambda p, out: self.convert_image(p, "JPEG", out),
                     ".png": lambda p, out: self.convert_image(p, "PNG", out),
+                    "Compress (Keep format)": lambda p, out: self.compress_image(p, 5, out),
                 },
             },
         }
@@ -67,4 +68,20 @@ class FileConverter:
         except (OSError, ValueError) as e:
             return False, f"แปลงรูปภาพไม่สำเร็จ: {e}"
         self.logger.log_action("CONVERT_IMAGE", f"Converted {os.path.basename(input_path)} to {output_path}")
+        return True, output_path
+
+    def compress_image(self, input_path, max_size_mb=5, output_dir=SAME_AS_SOURCE):
+        """Re-save images larger than max_size_mb as quality-75 JPEG."""
+        try:
+            size_mb = os.path.getsize(input_path) / (1024 * 1024)
+            if size_mb <= max_size_mb:
+                return True, "ไฟล์มีขนาดเล็กกว่าขีดจำกัดอยู่แล้ว"
+            output_path = self._output_path(input_path, output_dir, "_compressed.jpg")
+            with Image.open(input_path) as img:
+                if img.mode != "RGB":
+                    img = img.convert("RGB")
+                img.save(output_path, "JPEG", quality=75, optimize=True)
+        except (OSError, ValueError) as e:
+            return False, f"บีบอัดรูปภาพไม่สำเร็จ: {e}"
+        self.logger.log_action("COMPRESS_IMAGE", f"Compressed {os.path.basename(input_path)} (was {size_mb:.2f}MB)")
         return True, output_path

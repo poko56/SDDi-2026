@@ -1,6 +1,11 @@
 import os
 
+from PIL import Image
+from pillow_heif import register_heif_opener
+
 from core.paths import unique_path
+
+register_heif_opener()
 
 SAME_AS_SOURCE = None
 
@@ -16,7 +21,15 @@ class FileConverter:
         self.logger = logger
 
     def _registry(self):
-        return {}
+        return {
+            "Image": {
+                "filetypes": [("Image Files", "*.jpg *.jpeg *.png *.heic *.webp *.bmp")],
+                "targets": {
+                    ".jpg": lambda p, out: self.convert_image(p, "JPEG", out),
+                    ".png": lambda p, out: self.convert_image(p, "PNG", out),
+                },
+            },
+        }
 
     def modes(self):
         return list(self._registry())
@@ -39,3 +52,19 @@ class FileConverter:
         """Where to write the result; never an existing file (including the source itself)."""
         stem = os.path.splitext(os.path.basename(input_path))[0]
         return unique_path(os.path.join(output_dir or os.path.dirname(input_path), stem + suffix))
+
+    def convert_image(self, input_path, output_format="JPEG", output_dir=SAME_AS_SOURCE):
+        """Convert an image (including HEIC/WEBP) to JPEG or PNG."""
+        if not os.path.exists(input_path):
+            return False, "ไม่พบไฟล์ต้นฉบับ"
+        is_jpeg = output_format.upper() in ("JPEG", "JPG")
+        output_path = self._output_path(input_path, output_dir, ".jpg" if is_jpeg else ".png")
+        try:
+            with Image.open(input_path) as img:
+                if is_jpeg and img.mode in ("RGBA", "P", "LA"):
+                    img = img.convert("RGB")
+                img.save(output_path, format="JPEG" if is_jpeg else "PNG")
+        except (OSError, ValueError) as e:
+            return False, f"แปลงรูปภาพไม่สำเร็จ: {e}"
+        self.logger.log_action("CONVERT_IMAGE", f"Converted {os.path.basename(input_path)} to {output_path}")
+        return True, output_path

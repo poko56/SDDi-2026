@@ -8,6 +8,7 @@ import customtkinter as ctk
 from PIL import Image
 
 from core.paths import resource_path
+from ui.pages.cleaner import CleanerPage
 from ui.pages.dashboard import DashboardPage
 from ui.theme import (ACCENT_PRIMARY, ACCENT_SOFT, BG_CARD, BG_MAIN, SIDEBAR_BG, TEXT_MAIN, TEXT_MUTED, Icons,
                       create_icon_image, font)
@@ -28,6 +29,7 @@ class ZipZapApp(ctk.CTk):
 
     PAGES = [
         ("dashboard", "Dashboard", Icons.DASHBOARD, DashboardPage),
+        ("cleaner", "Smart Cleaner", Icons.CLEANER, CleanerPage),
     ]
 
     def __init__(self, services):

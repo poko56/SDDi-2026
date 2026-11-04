@@ -1,0 +1,70 @@
+import json
+import os
+
+from core.paths import is_frozen, resource_path
+
+API_KEY_ENV_VAR = "GEMINI_API_KEY"
+
+
+class ConfigManager:
+    """Loads and saves user settings (theme, API key, excluded folders) as JSON."""
+
+    DEFAULTS = {
+        "theme": "Light",
+        "ai_provider": "gemini",
+        "gemini_api_key": "",
+        "ollama_url": "http://localhost:11434",
+        "ollama_model": "",
+        "excluded_folders": [],
+    }
+
+    def __init__(self, path):
+        self.path = path
+        self._data = dict(self.DEFAULTS)
+        self._data.update(self._load())
+
+    def _load(self):
+        try:
+            with open(self.path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            return data if isinstance(data, dict) else {}
+        except FileNotFoundError:
+            return {}
+        except (OSError, json.JSONDecodeError):
+            # A corrupt config must not stop the app from starting
+            return {}
+
+    def get(self, key):
+        return self._data.get(key, self.DEFAULTS.get(key))
+
+    def set(self, key, value):
+        self._data[key] = value
+        self._save()
+
+    def _save(self):
+        os.makedirs(os.path.dirname(self.path) or ".", exist_ok=True)
+        tmp_path = self.path + ".tmp"
+        # The file holds the API key: create it readable by the owner only
+        fd = os.open(tmp_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(self._data, f, ensure_ascii=False, indent=4)
+        os.replace(tmp_path, self.path)
+
+    def resolve_api_key(self):
+        """Key typed in Settings, else the GEMINI_API_KEY env var, else a developer's local api_key.txt.
+
+        Release builds never bundle a key: each user supplies their own.
+        """
+        key = (self.get("gemini_api_key") or "").strip()
+        if key:
+            return key
+        key = os.environ.get(API_KEY_ENV_VAR, "").strip()
+        if key:
+            return key
+        if not is_frozen():
+            try:
+                with open(resource_path("api_key.txt"), "r", encoding="utf-8") as f:
+                    return f.read().strip()
+            except OSError:
+                pass
+        return ""

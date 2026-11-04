@@ -9,6 +9,7 @@ from PIL import Image
 
 from core.paths import resource_path
 from ui.pages.dashboard import DashboardPage
+from ui.pages.settings import SettingsPage
 from ui.theme import (ACCENT_PRIMARY, ACCENT_SOFT, BG_CARD, BG_MAIN, SIDEBAR_BG, TEXT_MAIN, TEXT_MUTED, Icons,
                       create_icon_image, font)
 
@@ -28,6 +29,7 @@ class ZipZapApp(ctk.CTk):
 
     PAGES = [
         ("dashboard", "Dashboard", Icons.DASHBOARD, DashboardPage),
+        ("settings", "Settings", Icons.SETTINGS, SettingsPage),
     ]
 
     def __init__(self, services):

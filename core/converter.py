@@ -1,4 +1,7 @@
 import os
+import shutil
+import sys
+import uuid
 
 from PIL import Image
 from pillow_heif import register_heif_opener
@@ -8,6 +11,20 @@ from core.paths import unique_path
 register_heif_opener()
 
 SAME_AS_SOURCE = None
+WORD_SANDBOX_DIR = os.path.expanduser("~/Library/Containers/com.microsoft.Word/Data/Documents/")
+
+
+class _NullStream:
+    """docx2pdf prints progress bars; a windowed app has no stdout to print to."""
+
+    def write(self, *args, **kwargs):
+        pass
+
+    def flush(self, *args, **kwargs):
+        pass
+
+    def isatty(self):
+        return False
 
 
 class FileConverter:
@@ -22,6 +39,10 @@ class FileConverter:
 
     def _registry(self):
         return {
+            "Document": {
+                "filetypes": [("Word Documents", "*.docx")],
+                "targets": {".pdf": self.convert_docx_to_pdf},
+            },
             "Image": {
                 "filetypes": [("Image Files", "*.jpg *.jpeg *.png *.heic *.webp *.bmp")],
                 "targets": {
@@ -84,4 +105,38 @@ class FileConverter:
         except (OSError, ValueError) as e:
             return False, f"บีบอัดรูปภาพไม่สำเร็จ: {e}"
         self.logger.log_action("COMPRESS_IMAGE", f"Compressed {os.path.basename(input_path)} (was {size_mb:.2f}MB)")
+        return True, output_path
+
+    def convert_docx_to_pdf(self, input_path, output_dir=SAME_AS_SOURCE):
+        """Convert .docx to .pdf using Microsoft Word (via docx2pdf)."""
+        if not input_path.lower().endswith(".docx"):
+            return False, "รองรับเฉพาะไฟล์ .docx เท่านั้นในตอนนี้"
+        if sys.stdout is None:
+            sys.stdout = _NullStream()
+        if sys.stderr is None:
+            sys.stderr = _NullStream()
+        output_path = self._output_path(input_path, output_dir, ".pdf")
+        try:
+            from docx2pdf import convert  # Imported lazily: slow to load and only needed here
+
+            if os.path.isdir(WORD_SANDBOX_DIR):
+                # Sandboxed Word on macOS can only write inside its own container
+                temp_id = uuid.uuid4().hex[:8]
+                temp_docx = os.path.join(WORD_SANDBOX_DIR, f"temp_{temp_id}.docx")
+                temp_pdf = os.path.join(WORD_SANDBOX_DIR, f"temp_{temp_id}.pdf")
+                shutil.copy2(input_path, temp_docx)
+                try:
+                    convert(temp_docx, temp_pdf)
+                    shutil.copy2(temp_pdf, output_path)
+                finally:
+                    for temp in (temp_docx, temp_pdf):
+                        if os.path.exists(temp):
+                            os.remove(temp)
+            else:
+                convert(input_path, output_path)
+        except Exception as e:  # docx2pdf surfaces Word/COM failures as many exception types
+            return False, f"แปลงเป็น PDF ไม่สำเร็จ: {e}"
+        if not os.path.exists(output_path):
+            return False, "แปลงเป็น PDF ไม่สำเร็จ: Word ไม่ได้สร้างไฟล์ PDF"
+        self.logger.log_action("CONVERT_PDF", f"Converted {os.path.basename(input_path)} to PDF")
         return True, output_path

@@ -9,6 +9,7 @@ from core.file_types import is_junk
 from core.paths import TRASH_DIR_NAME
 
 HASH_CHUNK_SIZE = 1024 * 1024
+QUICK_HASH_SIZE = 64 * 1024
 
 
 @dataclass
@@ -75,16 +76,21 @@ class StorageCleaner:
         return results
 
     def _find_duplicates(self, paths_by_size):
-        """Only files sharing a size can be duplicates; confirm with a full SHA-256."""
+        """Only files sharing a size can be duplicates; confirm with a quick then a full SHA-256."""
         results = []
         for size, paths in paths_by_size.items():
             if len(paths) < 2:
                 continue
-            for group in self._group_by(paths, self._hash):
-                original = min(group, key=lambda p: (p.count(os.sep), p))
-                results.extend(
-                    ScanResult(p, size, "duplicate", original) for p in group if p != original
-                )
+            for candidates in self._group_by(paths, lambda p: self._hash(p, QUICK_HASH_SIZE)):
+                if size > QUICK_HASH_SIZE:
+                    groups = self._group_by(candidates, self._hash)
+                else:
+                    groups = [candidates]  # The quick hash already covered the whole file
+                for group in groups:
+                    original = min(group, key=lambda p: (p.count(os.sep), p))
+                    results.extend(
+                        ScanResult(p, size, "duplicate", original) for p in group if p != original
+                    )
         return results
 
     @staticmethod
@@ -97,15 +103,18 @@ class StorageCleaner:
         return [g for g in groups.values() if len(g) > 1]
 
     @staticmethod
-    def _hash(path):
+    def _hash(path, limit=None):
         hasher = hashlib.sha256()
+        remaining = limit
         try:
             with open(path, "rb") as f:
-                while True:
-                    chunk = f.read(HASH_CHUNK_SIZE)
+                while remaining is None or remaining > 0:
+                    chunk = f.read(HASH_CHUNK_SIZE if remaining is None else min(HASH_CHUNK_SIZE, remaining))
                     if not chunk:
                         break
                     hasher.update(chunk)
+                    if remaining is not None:
+                        remaining -= len(chunk)
         except OSError:
             return None
         return hasher.hexdigest()

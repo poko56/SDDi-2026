@@ -23,6 +23,8 @@ class CleanerPage(BasePage):
 
     def build(self):
         self.scan_folder = ""
+        # (BooleanVar, [ScanResult]) per visible row, plus one per group for rows not rendered
+        self.selection = []
 
         self.grid_columnconfigure(1, weight=1)
         self.grid_rowconfigure(0, weight=1)
@@ -115,6 +117,7 @@ class CleanerPage(BasePage):
         self.app.run_background(lambda: self.services.cleaner.scan(folder, options), done, failed)
 
     def _show_results(self, results):
+        self.selection = []
         total = sum(r.size for r in results)
         self.lbl_summary.configure(text=f"พบ {len(results)} ไฟล์ ขนาดรวม {format_size(total)}")
         if not results:
@@ -123,4 +126,34 @@ class CleanerPage(BasePage):
         for key, title, icon in GROUPS:
             items = [r for r in results if r.type == key]
             if items:
-                pass  # TODO: render each group (_render_group)
+                self._render_group(title, icon, items)
+
+    def _render_group(self, title, icon, items):
+        group = ctk.CTkFrame(self.results_frame, fg_color=BG_SUBTLE, corner_radius=8)
+        group.pack(fill="x", pady=(0, 10))
+        header = ctk.CTkFrame(group, fg_color="transparent")
+        header.pack(fill="x", padx=10, pady=8)
+        ctk.CTkLabel(header, image=create_icon_image(icon, TEXT_MUTED, 16), text="").pack(side="left")
+        ctk.CTkLabel(header, text=f" {title} ({len(items)})", font=font(13, "bold"),
+                     text_color=TEXT_MAIN).pack(side="left")
+        ctk.CTkLabel(header, text=format_size(sum(i.size for i in items)), font=font(13, "bold"),
+                     text_color=ACCENT_PRIMARY).pack(side="right")
+
+        for item in items[:MAX_ROWS_PER_GROUP]:
+            label = os.path.relpath(item.path, self.scan_folder)
+            if item.original:
+                label += f"  (ซ้ำกับ {os.path.basename(item.original)})"
+            self._result_row(group, label, item.size, [item])
+        hidden = items[MAX_ROWS_PER_GROUP:]
+        if hidden:
+            self._result_row(group, f"... และอีก {len(hidden)} ไฟล์ (เลือกทั้งหมด)", sum(i.size for i in hidden),
+                             hidden, muted=True)
+
+    def _result_row(self, parent, text, size, items, muted=False):
+        row = ctk.CTkFrame(parent, fg_color="transparent")
+        row.pack(fill="x", padx=20, pady=2)
+        var = ctk.BooleanVar(value=True)
+        self.selection.append((var, items))
+        ctk.CTkCheckBox(row, text="", width=20, fg_color=ACCENT_PRIMARY, variable=var).pack(side="left")
+        ctk.CTkLabel(row, text=text, text_color=TEXT_MUTED if muted else TEXT_MAIN).pack(side="left")
+        ctk.CTkLabel(row, text=format_size(size), text_color=TEXT_MUTED).pack(side="right")

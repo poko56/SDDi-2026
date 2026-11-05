@@ -5,9 +5,10 @@ import customtkinter as ctk
 
 from core.cleaner import ScanOptions
 from core.file_types import format_size
+from core.paths import TRASH_DIR_NAME
 from ui.pages.base import BasePage
-from ui.theme import (ACCENT_HOVER, ACCENT_PRIMARY, BG_HOVER, BG_SUBTLE, BORDER, TEXT_MAIN, TEXT_MUTED,
-                      Icons, create_icon_image, font)
+from ui.theme import (ACCENT_HOVER, ACCENT_PRIMARY, ACCENT_DANGER, BG_HOVER, BG_SUBTLE, BORDER, DANGER_HOVER,
+                      TEXT_MAIN, TEXT_MUTED, Icons, create_icon_image, font)
 from ui.widgets import card
 
 MAX_ROWS_PER_GROUP = 30
@@ -86,6 +87,9 @@ class CleanerPage(BasePage):
         self.lbl_selected = ctk.CTkLabel(footer, text="เลือกแล้ว: 0 ไฟล์", text_color=TEXT_MAIN,
                                          font=font(13, "bold"))
         self.lbl_selected.pack(side="left")
+        self.btn_clean = ctk.CTkButton(footer, text="🗑 Clean Up", fg_color=ACCENT_DANGER, hover_color=DANGER_HOVER,
+                                       command=self._clean, state="disabled")
+        self.btn_clean.pack(side="right")
 
         self.results_frame = ctk.CTkScrollableFrame(results, fg_color="transparent")
         self.results_frame.pack(fill="both", expand=True, padx=10, pady=5)
@@ -109,6 +113,7 @@ class CleanerPage(BasePage):
         options = ScanOptions(duplicates=self.var_dup.get(), junk=self.var_junk.get(), large=self.var_large.get())
         self.scan_folder = folder
         self.btn_scan.configure(state="disabled", text="Scanning...")
+        self.btn_clean.configure(state="disabled")
         for widget in self.results_frame.winfo_children():
             widget.destroy()
 
@@ -173,3 +178,27 @@ class CleanerPage(BasePage):
         selected = self._selected_items()
         size = format_size(sum(i.size for i in selected))
         self.lbl_selected.configure(text=f"เลือกแล้ว: {len(selected)} ไฟล์ ({size})")
+        if selected:
+            self.btn_clean.configure(state="normal", text=f"🗑 ย้ายไปถังขยะ — {size}")
+        else:
+            self.btn_clean.configure(state="disabled", text="🗑 Clean Up")
+
+    def _clean(self):
+        paths = [item.path for item in self._selected_items()]
+        if not paths:
+            return
+        folder = self.scan_folder
+        self.btn_clean.configure(state="disabled", text="Cleaning...")
+
+        def done(result):
+            count, moved_bytes = result
+            trash = os.path.join(folder, TRASH_DIR_NAME)
+            self.app.log(f"🗑 ย้าย {count} ไฟล์ ({format_size(moved_bytes)}) ไปที่ {trash}")
+            messagebox.showinfo("Smart Cleaner",
+                                f"ทำความสะอาดเรียบร้อย!\nย้าย {count} ไฟล์ ({format_size(moved_bytes)}) "
+                                f"ไปที่\n{trash}\n\n"
+                                "กด 'ย้อนกลับ' ที่ Dashboard เพื่อกู้คืน หรือลบโฟลเดอร์นี้เพื่อคืนพื้นที่จริง")
+            self.app.pages["dashboard"].refresh_stats()
+            self._scan()
+
+        self.app.run_background(lambda: self.services.cleaner.clean_files(paths, folder), done)

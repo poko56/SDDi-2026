@@ -81,6 +81,12 @@ class CleanerPage(BasePage):
         self.lbl_summary = ctk.CTkLabel(header, text="ยังไม่ได้สแกน", text_color=TEXT_MUTED)
         self.lbl_summary.pack(side="right")
 
+        footer = ctk.CTkFrame(results, fg_color="transparent")
+        footer.pack(side="bottom", fill="x", padx=20, pady=15)
+        self.lbl_selected = ctk.CTkLabel(footer, text="เลือกแล้ว: 0 ไฟล์", text_color=TEXT_MAIN,
+                                         font=font(13, "bold"))
+        self.lbl_selected.pack(side="left")
+
         self.results_frame = ctk.CTkScrollableFrame(results, fg_color="transparent")
         self.results_frame.pack(fill="both", expand=True, padx=10, pady=5)
 
@@ -127,6 +133,7 @@ class CleanerPage(BasePage):
             items = [r for r in results if r.type == key]
             if items:
                 self._render_group(title, icon, items)
+        self._update_selection()
 
     def _render_group(self, title, icon, items):
         group = ctk.CTkFrame(self.results_frame, fg_color=BG_SUBTLE, corner_radius=8)
@@ -154,6 +161,15 @@ class CleanerPage(BasePage):
         row.pack(fill="x", padx=20, pady=2)
         var = ctk.BooleanVar(value=True)
         self.selection.append((var, items))
-        ctk.CTkCheckBox(row, text="", width=20, fg_color=ACCENT_PRIMARY, variable=var).pack(side="left")
+        ctk.CTkCheckBox(row, text="", width=20, fg_color=ACCENT_PRIMARY, variable=var,
+                        command=self._update_selection).pack(side="left")
         ctk.CTkLabel(row, text=text, text_color=TEXT_MUTED if muted else TEXT_MAIN).pack(side="left")
         ctk.CTkLabel(row, text=format_size(size), text_color=TEXT_MUTED).pack(side="right")
+
+    def _selected_items(self):
+        return [item for var, items in self.selection if var.get() for item in items]
+
+    def _update_selection(self):
+        selected = self._selected_items()
+        size = format_size(sum(i.size for i in selected))
+        self.lbl_selected.configure(text=f"เลือกแล้ว: {len(selected)} ไฟล์ ({size})")

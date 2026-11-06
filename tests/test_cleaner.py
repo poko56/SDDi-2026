@@ -3,6 +3,8 @@ import time
 
 from conftest import write
 from core.cleaner import QUICK_HASH_SIZE, ScanOptions, StorageCleaner
+from core.exclusion import ExclusionPolicy
+from core.paths import TRASH_DIR_NAME
 
 ONLY_DUPLICATES = ScanOptions(duplicates=True, junk=False, large=False)
 ONLY_JUNK = ScanOptions(duplicates=False, junk=True, large=False)
@@ -89,3 +91,24 @@ def test_one_walk_reports_every_enabled_check(logger, workdir):
     results = StorageCleaner(logger).scan(str(workdir), ScanOptions())
 
     assert {(os.path.basename(r.path), r.type) for r in results} == {("b.txt", "duplicate"), ("x.tmp", "junk")}
+
+
+def test_scan_skips_excluded_folders(logger, workdir):
+    write(workdir / "private" / "x.tmp")
+    write(workdir / "y.tmp")
+
+    cleaner = StorageCleaner(logger, ExclusionPolicy([str(workdir / "private")]))
+
+    assert names(cleaner.scan(str(workdir), ONLY_JUNK)) == {"y.tmp"}
+
+
+def test_scan_skips_trash_folder(logger, workdir):
+    write(workdir / TRASH_DIR_NAME / "old.tmp")
+    write(workdir / TRASH_DIR_NAME / "a.txt", "same")
+    write(workdir / "a.txt", "same")
+
+    assert StorageCleaner(logger).scan(str(workdir), ScanOptions()) == []
+
+
+def test_scan_missing_folder_returns_empty(logger, workdir):
+    assert StorageCleaner(logger).scan(str(workdir / "nope")) == []

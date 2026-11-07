@@ -53,6 +53,7 @@ class ZipZapApp(ctk.CTk):
         self._build_sidebar()
         self._build_content_area()
 
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
         self.after(UI_POLL_MS, self._drain_ui_queue)
         self.show_page("dashboard")
 
@@ -201,3 +202,8 @@ class ZipZapApp(ctk.CTk):
         self.lbl_page_title.configure(text=page.title)
         page.pack(fill="both", expand=True, padx=30, pady=20)
         page.on_show()
+
+    def _on_close(self):
+        self.services.watcher.stop_watching()
+        self.destroy()
+

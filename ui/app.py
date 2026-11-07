@@ -9,6 +9,7 @@ from PIL import Image
 
 from core.paths import resource_path
 from ui.pages.dashboard import DashboardPage
+from ui.pages.monitor import MonitorPage
 from ui.pages.settings import SettingsPage
 from ui.theme import (ACCENT_PRIMARY, ACCENT_SOFT, BG_CARD, BG_MAIN, SIDEBAR_BG, TEXT_MAIN, TEXT_MUTED, Icons,
                       create_icon_image, font)
@@ -29,6 +30,7 @@ class ZipZapApp(ctk.CTk):
 
     PAGES = [
         ("dashboard", "Dashboard", Icons.DASHBOARD, DashboardPage),
+        ("monitor", "Auto Monitor", Icons.MONITOR, MonitorPage),
         ("settings", "Settings", Icons.SETTINGS, SettingsPage),
     ]
 
@@ -51,6 +53,7 @@ class ZipZapApp(ctk.CTk):
         self._build_sidebar()
         self._build_content_area()
 
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
         self.after(UI_POLL_MS, self._drain_ui_queue)
         self.show_page("dashboard")
 
@@ -199,3 +202,8 @@ class ZipZapApp(ctk.CTk):
         self.lbl_page_title.configure(text=page.title)
         page.pack(fill="both", expand=True, padx=30, pady=20)
         page.on_show()
+
+    def _on_close(self):
+        self.services.watcher.stop_watching()
+        self.destroy()
+

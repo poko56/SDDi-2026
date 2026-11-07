@@ -72,6 +72,8 @@ class DashboardPage(BasePage):
             actions, text=" จัดตามเดือน", image=create_icon_image(Icons.CALENDAR, ACCENT_PRIMARY, 16),
             command=lambda: self._organize(ByModifiedMonth()), state="disabled", **small)
         self.btn_sort_month.pack(side="left", padx=(0, 6))
+        ctk.CTkButton(actions, text=" ย้อนกลับ", image=create_icon_image(Icons.UNDO, TEXT_MUTED, 16),
+                      command=self._undo, width=90, **small).pack(side="left")
 
     # ---------- Behaviour ----------
 
@@ -125,3 +127,9 @@ class DashboardPage(BasePage):
             self.refresh_stats()
 
         self.app.run_background(lambda: self.services.organizer.organize_folder(folder, strategy), done)
+
+    def _undo(self):
+        ok, message = self.services.logger.undo_last_action()
+        self.app.log(("↩️ " if ok else "⚠️ ") + message)
+        if ok:
+            self.refresh_stats()

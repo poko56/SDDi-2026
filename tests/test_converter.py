@@ -66,3 +66,49 @@ def test_docx_to_pdf_rejects_other_types(logger, workdir):
 def test_extract_audio_rejects_non_video(logger, workdir):
     ok, _ = FileConverter(logger).extract_audio(str(write(workdir / "a.txt")))
     assert not ok
+
+
+def test_registry_drives_modes_and_targets(logger):
+    converter = FileConverter(logger)
+    assert converter.modes() == ["Document", "Image", "Media"]
+    assert converter.targets_for("Image") == [".jpg", ".png", "Compress (Keep format)"]
+    assert converter.filetypes_for("Media")[-1] == ("All Files", "*.*")
+
+
+def test_convert_dispatches_to_registered_handler(logger, workdir):
+    src = workdir / "a.png"
+    Image.new("RGB", (5, 5)).save(src)
+
+    ok, out = FileConverter(logger).convert(str(src), "Image", ".jpg")
+
+    assert ok
+    assert out.endswith("a.jpg")
+
+
+def test_convert_unknown_combination(logger, workdir):
+    ok, msg = FileConverter(logger).convert(str(workdir / "a.png"), "Image", ".gif")
+    assert not ok
+    assert ".gif" in msg
+
+
+def test_convert_never_overwrites_existing_output(logger, workdir):
+    Image.new("RGB", (5, 5), "blue").save(workdir / "photo.png")
+    Image.new("RGB", (5, 5), "green").save(workdir / "photo.jpg")
+
+    ok, out = FileConverter(logger).convert_image(str(workdir / "photo.png"), "JPEG")
+
+    assert ok
+    assert out.endswith("photo_1.jpg")
+    assert Image.open(workdir / "photo.jpg").getpixel((1, 1))[1] > 100  # Still the green original
+
+
+def test_convert_same_format_keeps_source(logger, workdir):
+    src = workdir / "a.png"
+    Image.new("RGB", (5, 5)).save(src)
+    before = src.read_bytes()
+
+    ok, out = FileConverter(logger).convert_image(str(src), "PNG")
+
+    assert ok
+    assert out.endswith("a_1.png")
+    assert src.read_bytes() == before

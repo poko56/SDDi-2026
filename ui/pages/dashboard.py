@@ -3,9 +3,10 @@ from tkinter import filedialog
 import customtkinter as ctk
 
 from core.file_types import format_size
+from core.organizer import ByFileType, ByModifiedMonth
 from ui.pages.base import BasePage
-from ui.theme import (ACCENT_HOVER, ACCENT_PRIMARY, CHART_DOCUMENTS, CHART_EMPTY, CHART_MEDIA, CHART_OTHERS,
-                      TEXT_MAIN, TEXT_MUTED, font)
+from ui.theme import (ACCENT_HOVER, ACCENT_PRIMARY, BG_HOVER, BG_SUBTLE, CHART_DOCUMENTS, CHART_EMPTY, CHART_MEDIA,
+                      CHART_OTHERS, TEXT_MAIN, TEXT_MUTED, Icons, create_icon_image, font)
 from ui.widgets import card, render_donut
 
 
@@ -59,6 +60,21 @@ class DashboardPage(BasePage):
         ctk.CTkButton(folder, text="Select Folder", command=self._select_folder, fg_color=ACCENT_PRIMARY,
                       hover_color=ACCENT_HOVER).pack(anchor="w", padx=20, pady=(5, 10))
 
+        actions = ctk.CTkFrame(folder, fg_color="transparent")
+        actions.pack(fill="x", padx=20, pady=(0, 15))
+        small = {"height": 30, "fg_color": BG_SUBTLE, "hover_color": BG_HOVER, "text_color": TEXT_MAIN,
+                 "font": font(12, "bold")}
+        self.btn_sort_type = ctk.CTkButton(
+            actions, text=" จัดตามประเภท", image=create_icon_image(Icons.SORT, ACCENT_PRIMARY, 16),
+            command=lambda: self._organize(ByFileType()), state="disabled", **small)
+        self.btn_sort_type.pack(side="left", padx=(0, 6))
+        self.btn_sort_month = ctk.CTkButton(
+            actions, text=" จัดตามเดือน", image=create_icon_image(Icons.CALENDAR, ACCENT_PRIMARY, 16),
+            command=lambda: self._organize(ByModifiedMonth()), state="disabled", **small)
+        self.btn_sort_month.pack(side="left", padx=(0, 6))
+        ctk.CTkButton(actions, text=" ย้อนกลับ", image=create_icon_image(Icons.UNDO, TEXT_MUTED, 16),
+                      command=self._undo, width=90, **small).pack(side="left")
+
     # ---------- Behaviour ----------
 
     def _select_folder(self):
@@ -68,6 +84,8 @@ class DashboardPage(BasePage):
 
     def _on_folder_changed(self, folder):
         self.lbl_folder.configure(text=folder)
+        self.btn_sort_type.configure(state="normal")
+        self.btn_sort_month.configure(state="normal")
         self.refresh_stats()
 
     def refresh_stats(self):
@@ -98,3 +116,20 @@ class DashboardPage(BasePage):
         self.lbl_donut.configure(image=image, text=center, text_color=ACCENT_PRIMARY, compound="center",
                                  font=font(18, "bold"))
         self.lbl_donut.image = image
+
+    def _organize(self, strategy):
+        folder = self.app.current_folder
+        self.app.log(f"⏳ กำลังจัดไฟล์ตาม{strategy.label}...")
+
+        def done(result):
+            ok, message = result
+            self.app.log(("✅ " if ok else "❌ ") + message)
+            self.refresh_stats()
+
+        self.app.run_background(lambda: self.services.organizer.organize_folder(folder, strategy), done)
+
+    def _undo(self):
+        ok, message = self.services.logger.undo_last_action()
+        self.app.log(("↩️ " if ok else "⚠️ ") + message)
+        if ok:
+            self.refresh_stats()

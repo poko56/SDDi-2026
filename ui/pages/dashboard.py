@@ -1,4 +1,5 @@
-from tkinter import filedialog
+import os
+from tkinter import filedialog, messagebox
 
 import customtkinter as ctk
 
@@ -9,6 +10,8 @@ from ui.theme import (ACCENT_HOVER, ACCENT_PRIMARY, BG_CARD, BG_HOVER, BG_SUBTLE
                       CHART_MEDIA, CHART_OTHERS, TEXT_MAIN, TEXT_MUTED, Icons, create_icon_image, font)
 from ui.widgets import card, render_donut
 
+RENAME_FILETYPES = [("Supported files", "*.jpg *.jpeg *.png *.webp *.heic *.pdf *.txt"), ("All files", "*.*")]
+
 
 class DashboardPage(BasePage):
     title = "Dashboard"
@@ -18,6 +21,7 @@ class DashboardPage(BasePage):
         top_row.pack(fill="x", pady=(0, 20))
         self._build_storage_card(top_row)
         self._build_folder_card(top_row)
+        self._build_quick_actions()
         self._build_activity_log()
 
         self.app.on_folder_change(self._on_folder_changed)
@@ -76,6 +80,26 @@ class DashboardPage(BasePage):
         self.btn_sort_month.pack(side="left", padx=(0, 6))
         ctk.CTkButton(actions, text=" ย้อนกลับ", image=create_icon_image(Icons.UNDO, TEXT_MUTED, 16),
                       command=self._undo, width=90, **small).pack(side="left")
+
+    def _build_quick_actions(self):
+        row = ctk.CTkFrame(self, fg_color="transparent")
+        row.pack(fill="x", pady=10)
+        ctk.CTkLabel(row, text="Quick Actions", font=font(16, "bold"), text_color=TEXT_MAIN).pack(anchor="w", pady=5)
+        buttons = ctk.CTkFrame(row, fg_color="transparent")
+        buttons.pack(fill="x")
+
+        def quick_button(text, command, icon, color):
+            btn = ctk.CTkButton(buttons, text=f"  {text}", image=create_icon_image(icon, color, size=28),
+                                command=command, fg_color=BG_CARD, text_color=TEXT_MAIN, hover_color=BG_SUBTLE,
+                                height=80, corner_radius=15, font=font(14, "bold"))
+            btn.pack(side="left", fill="x", expand=True, padx=5)
+            return btn
+
+        quick_button("ทำความสะอาด", lambda: self.app.show_page("cleaner"), Icons.DELETE, "#10B981")
+        quick_button("แปลงไฟล์", lambda: self.app.show_page("converter"), Icons.CONVERTER, "#7C3AED")
+        quick_button("AI วิเคราะห์", lambda: self.app.show_page("ai"), Icons.AI, "#F472B6")
+        quick_button("เฝ้าระวัง", lambda: self.app.show_page("monitor"), Icons.MONITOR, "#F59E0B")
+        self.btn_smart_rename = quick_button("Smart Rename", self._smart_rename, Icons.EDIT, "#3B82F6")
 
     def _build_activity_log(self):
         log_card = card(self)
@@ -150,3 +174,36 @@ class DashboardPage(BasePage):
         self.app.log(("↩️ " if ok else "⚠️ ") + message)
         if ok:
             self.refresh_stats()
+
+    def _smart_rename(self):
+        if not self.services.llm.is_configured:
+            messagebox.showwarning("Smart Rename", "กรุณาตั้งค่า AI ในหน้า Settings ก่อนใช้งานครับ\n"
+                                                   "(ใส่ Gemini API Key หรือเลือกโมเดล Local AI)")
+            self.app.show_page("settings")
+            return
+        files = filedialog.askopenfilenames(filetypes=RENAME_FILETYPES)
+        if not files:
+            return
+        self.btn_smart_rename.configure(state="disabled", text="  กำลังเปลี่ยนชื่อ...")
+
+        def rename_all():
+            renamed = 0
+            for path in files:
+                name = os.path.basename(path)
+                self.app.log(f"⏳ กำลังให้ AI วิเคราะห์ไฟล์: {name}...")
+                ok, message = self.services.organizer.smart_rename(path)
+                if ok:
+                    renamed += 1
+                    self.app.log(f"✅ {name} → {message}")
+                else:
+                    self.app.log(f"⚠️ ข้ามไฟล์ {name}: {message}")
+            return renamed
+
+        def done(renamed):
+            self.app.log(f"🎉 Smart Rename เสร็จสิ้น! เปลี่ยนไปได้ {renamed}/{len(files)} ไฟล์")
+            self.btn_smart_rename.configure(state="normal", text="  Smart Rename")
+            messagebox.showinfo("Smart Rename", f"เปลี่ยนชื่อสำเร็จ {renamed} จาก {len(files)} ไฟล์\n"
+                                                "ดูรายละเอียดได้ใน Recent Activities")
+            self.refresh_stats()
+
+        self.app.run_background(rename_all, done)

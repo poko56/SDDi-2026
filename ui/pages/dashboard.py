@@ -83,8 +83,9 @@ class DashboardPage(BasePage):
 
     def _build_quick_actions(self):
         row = ctk.CTkFrame(self, fg_color="transparent")
-        row.pack(fill="x", pady=10)
-        ctk.CTkLabel(row, text="Quick Actions", font=font(16, "bold"), text_color=TEXT_MAIN).pack(anchor="w", pady=5)
+        row.pack(fill="x", pady=(10, 20))
+        ctk.CTkLabel(row, text="Quick Actions", font=font(16, "bold"),
+                     text_color=TEXT_MAIN).pack(anchor="w", pady=(0, 10))
         buttons = ctk.CTkFrame(row, fg_color="transparent")
         buttons.pack(fill="x")
 

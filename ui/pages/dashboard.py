@@ -5,8 +5,8 @@ import customtkinter as ctk
 from core.file_types import format_size
 from core.organizer import ByFileType, ByModifiedMonth
 from ui.pages.base import BasePage
-from ui.theme import (ACCENT_HOVER, ACCENT_PRIMARY, BG_HOVER, BG_SUBTLE, CHART_DOCUMENTS, CHART_EMPTY, CHART_MEDIA,
-                      CHART_OTHERS, TEXT_MAIN, TEXT_MUTED, Icons, create_icon_image, font)
+from ui.theme import (ACCENT_HOVER, ACCENT_PRIMARY, BG_CARD, BG_HOVER, BG_SUBTLE, CHART_DOCUMENTS, CHART_EMPTY,
+                      CHART_MEDIA, CHART_OTHERS, TEXT_MAIN, TEXT_MUTED, Icons, create_icon_image, font)
 from ui.widgets import card, render_donut
 
 
@@ -18,8 +18,10 @@ class DashboardPage(BasePage):
         top_row.pack(fill="x", pady=(0, 20))
         self._build_storage_card(top_row)
         self._build_folder_card(top_row)
+        self._build_activity_log()
 
         self.app.on_folder_change(self._on_folder_changed)
+        self.app.on_log(self._append_log)
         self._draw_donut(None, 0)
 
     # ---------- Layout ----------
@@ -75,7 +77,22 @@ class DashboardPage(BasePage):
         ctk.CTkButton(actions, text=" ย้อนกลับ", image=create_icon_image(Icons.UNDO, TEXT_MUTED, 16),
                       command=self._undo, width=90, **small).pack(side="left")
 
+    def _build_activity_log(self):
+        log_card = card(self)
+        log_card.pack(fill="both", expand=True, pady=10)
+        ctk.CTkLabel(log_card, text="Recent Activities", font=font(16, "bold"),
+                     text_color=TEXT_MAIN).pack(anchor="w", padx=20, pady=(15, 10))
+        self.txt_log = ctk.CTkTextbox(log_card, fg_color="transparent", text_color=TEXT_MUTED)
+        self.txt_log.pack(fill="both", expand=True, padx=20, pady=(0, 20))
+
     # ---------- Behaviour ----------
+
+    def on_show(self):
+        self.refresh_stats()
+
+    def _append_log(self, line):
+        self.txt_log.insert("end", line)
+        self.txt_log.see("end")
 
     def _select_folder(self):
         folder = filedialog.askdirectory()

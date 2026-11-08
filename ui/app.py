@@ -8,6 +8,7 @@ import customtkinter as ctk
 from PIL import Image
 
 from core.paths import resource_path
+from ui.pages.cleaner import CleanerPage
 from ui.pages.dashboard import DashboardPage
 from ui.pages.monitor import MonitorPage
 from ui.pages.settings import SettingsPage
@@ -30,6 +31,7 @@ class ZipZapApp(ctk.CTk):
 
     PAGES = [
         ("dashboard", "Dashboard", Icons.DASHBOARD, DashboardPage),
+        ("cleaner", "Smart Cleaner", Icons.CLEANER, CleanerPage),
         ("monitor", "Auto Monitor", Icons.MONITOR, MonitorPage),
         ("settings", "Settings", Icons.SETTINGS, SettingsPage),
     ]
@@ -206,4 +208,3 @@ class ZipZapApp(ctk.CTk):
     def _on_close(self):
         self.services.watcher.stop_watching()
         self.destroy()
-

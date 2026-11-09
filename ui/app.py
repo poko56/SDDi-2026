@@ -8,7 +8,11 @@ import customtkinter as ctk
 from PIL import Image
 
 from core.paths import resource_path
+from ui.pages.ai_chat import AIChatPage
+from ui.pages.cleaner import CleanerPage
+from ui.pages.converter import ConverterPage
 from ui.pages.dashboard import DashboardPage
+from ui.pages.monitor import MonitorPage
 from ui.pages.settings import SettingsPage
 from ui.theme import (ACCENT_PRIMARY, ACCENT_SOFT, BG_CARD, BG_MAIN, SIDEBAR_BG, TEXT_MAIN, TEXT_MUTED, Icons,
                       create_icon_image, font)
@@ -29,6 +33,10 @@ class ZipZapApp(ctk.CTk):
 
     PAGES = [
         ("dashboard", "Dashboard", Icons.DASHBOARD, DashboardPage),
+        ("cleaner", "Smart Cleaner", Icons.CLEANER, CleanerPage),
+        ("converter", "Converter", Icons.CONVERTER, ConverterPage),
+        ("ai", "AI Help Chat", Icons.AI, AIChatPage),
+        ("monitor", "Auto Monitor", Icons.MONITOR, MonitorPage),
         ("settings", "Settings", Icons.SETTINGS, SettingsPage),
     ]
 
@@ -51,6 +59,7 @@ class ZipZapApp(ctk.CTk):
         self._build_sidebar()
         self._build_content_area()
 
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
         self.after(UI_POLL_MS, self._drain_ui_queue)
         self.show_page("dashboard")
 
@@ -172,6 +181,12 @@ class ZipZapApp(ctk.CTk):
             btn.icons = (create_icon_image(icon, ACCENT_PRIMARY), create_icon_image(icon, TEXT_MUTED))
             self._nav_buttons[key] = btn
 
+        self.switch_theme = ctk.CTkSwitch(sidebar, text="Dark Mode", command=self._toggle_theme,
+                                          progress_color=ACCENT_PRIMARY)
+        self.switch_theme.grid(row=len(self.PAGES) + 2, column=0, padx=20, pady=20, sticky="w")
+        if self.services.config.get("theme") == "Dark":
+            self.switch_theme.select()
+
     def _build_content_area(self):
         main = ctk.CTkFrame(self, fg_color=BG_MAIN, corner_radius=0)
         main.grid(row=0, column=1, sticky="nsew")
@@ -199,3 +214,13 @@ class ZipZapApp(ctk.CTk):
         self.lbl_page_title.configure(text=page.title)
         page.pack(fill="both", expand=True, padx=30, pady=20)
         page.on_show()
+
+    def _toggle_theme(self):
+        theme = "Dark" if self.switch_theme.get() == 1 else "Light"
+        self.services.config.set("theme", theme)
+        ctk.set_appearance_mode(theme)
+        self.pages["dashboard"].refresh_stats()  # The donut is a bitmap: redraw it in the new colours
+
+    def _on_close(self):
+        self.services.watcher.stop_watching()
+        self.destroy()

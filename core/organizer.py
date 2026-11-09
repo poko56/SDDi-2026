@@ -4,6 +4,8 @@ import re
 import shutil
 
 from PIL import Image
+from pypdf import PdfReader
+from pypdf.errors import PdfReadError
 from pillow_heif import register_heif_opener
 
 from core.exclusion import ExclusionPolicy
@@ -41,6 +43,33 @@ def annotate_buddhist_years(text):
     Small local models often get the -543 conversion wrong, so it is done here instead.
     """
     return _BUDDHIST_YEAR.sub(lambda m: f"{m.group(1)}{m.group(2)} (ค.ศ. {int(m.group(2)) - 543})", text)
+
+
+class UnreadableFileError(Exception):
+    """The file cannot be turned into something the AI can read."""
+
+
+_PDF_ERRORS = (PdfReadError, ValueError, KeyError, OSError, NotImplementedError)
+
+
+def extract_pdf_text(path, max_pages=PDF_TEXT_PAGES, max_chars=MAX_TEXT_CHARS):
+    """Text of the first pages of a PDF, for AI providers that cannot read PDF files themselves."""
+    try:
+        reader = PdfReader(path)
+        text = "\n".join((page.extract_text() or "") for page in reader.pages[:max_pages])
+    except _PDF_ERRORS as e:
+        raise UnreadableFileError(f"อ่าน PDF ไม่ได้: {e}") from e
+    return text.strip()[:max_chars]
+
+
+def extract_pdf_first_image(path):
+    """The largest picture on the first page (a scanned PDF is usually one big image), or None."""
+    try:
+        images = PdfReader(path).pages[0].images
+        pictures = [img.image for img in images if img.image is not None]
+    except (IndexError, *_PDF_ERRORS):
+        return None
+    return max(pictures, key=lambda im: im.width * im.height, default=None)
 
 
 class SortStrategy:
@@ -117,10 +146,19 @@ class FileOrganizer:
                 img.load()
                 return [RENAME_PROMPT, img.copy()], None
         if ext == ".pdf":
-            uploaded = self.llm.upload_file(file_path)
-            return [uploaded, RENAME_PROMPT], uploaded
-        with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-            text = f.read(MAX_TEXT_CHARS)
+            if self.llm.supports_file_upload:
+                uploaded = self.llm.upload_file(file_path)
+                return [uploaded, RENAME_PROMPT], uploaded
+            text = extract_pdf_text(file_path)
+            if not text:
+                # A scanned PDF has no text layer: show the page image to a vision model instead
+                page_image = extract_pdf_first_image(file_path)
+                if page_image is None:
+                    raise UnreadableFileError("PDF นี้ไม่มีทั้งข้อความและรูปภาพให้ AI อ่าน")
+                return [RENAME_PROMPT, page_image], None
+        else:
+            with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+                text = f.read(MAX_TEXT_CHARS)
         return [RENAME_PROMPT, f"File content:\n{annotate_buddhist_years(text)}"], None
 
     def smart_rename(self, file_path):
@@ -142,6 +180,8 @@ class FileOrganizer:
                 return False, ("ไฟล์นี้อาจเป็นไฟล์จำลอง (Fake file) หรือไฟล์เสียหาย "
                                "AI จึงไม่สามารถอ่านเนื้อหาข้างในได้ครับ")
             return False, f"เชื่อมต่อ AI ไม่สำเร็จ: {e}"
+        except UnreadableFileError as e:
+            return False, str(e)
         except OSError as e:
             return False, f"อ่านไฟล์ไม่ได้: {e}"
         finally:

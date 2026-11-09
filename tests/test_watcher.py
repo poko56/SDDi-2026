@@ -2,7 +2,7 @@ import threading
 
 from conftest import write
 from core.exclusion import ExclusionPolicy
-from core.watcher import CONVERT_FOLDER_NAME, SmartFileHandler
+from core.watcher import CONVERT_FOLDER_NAME, SmartFileHandler, WatcherManager
 
 
 class Event:
@@ -82,3 +82,21 @@ def test_trash_and_directory_events_are_ignored(logger, workdir):
     handler.on_created(Event(str(workdir / ".zipzap_trash" / "a.tmp")))
     handler.on_created(Event(str(workdir / "newdir"), is_directory=True))
     assert handler._timers == {}
+
+
+def test_start_watching_missing_folder(logger, workdir):
+    ok, _ = WatcherManager(logger).start_watching(str(workdir / "nope"), {})
+    assert not ok
+
+
+def test_start_and_stop_watching(logger, workdir):
+    manager = WatcherManager(logger)
+
+    ok, _ = manager.start_watching(str(workdir), {})
+    assert ok and manager.is_running
+    assert (workdir / CONVERT_FOLDER_NAME).is_dir()
+
+    ok, _ = manager.stop_watching()
+    assert ok and not manager.is_running
+    ok, _ = manager.stop_watching()
+    assert not ok

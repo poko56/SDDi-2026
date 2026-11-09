@@ -87,7 +87,7 @@ class ConverterPage(BasePage):
         self.menu_target.configure(values=targets)
         self.var_target.set(targets[0])
         self._refresh_list()
-        
+
     def _choose_output(self):
         folder = filedialog.askdirectory(title="เลือกโฟลเดอร์สำหรับบันทึกไฟล์")
         if folder:
@@ -136,7 +136,7 @@ class ConverterPage(BasePage):
             except OSError:
                 size = "ไม่พบไฟล์"
             ctk.CTkLabel(info, text=size, text_color=TEXT_MUTED, font=font(11)).pack(anchor="w", pady=(0, 5))
-            
+
     def _convert(self):
         files = list(self.files)
         mode, target = self.mode, self.var_target.get()

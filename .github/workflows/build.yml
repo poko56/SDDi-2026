@@ -57,11 +57,13 @@ jobs:
           pyinstaller --noconfirm --windowed --name ZipZap --icon icon.ico
           --add-data "assets;assets" --add-data "icon.png;."
           --collect-all customtkinter --collect-all pillow_heif main.py
+      - name: Zip exe folder
+        run: Compress-Archive -Path dist/ZipZap -DestinationPath dist/ZipZap-Windows.zip
       - name: Upload exe
         uses: actions/upload-artifact@v4
         with:
           name: ZipZap-windows
-          path: dist/ZipZap
+          path: dist/ZipZap-Windows.zip
 
   build-mac:
     needs: [lint, test]
@@ -82,11 +84,13 @@ jobs:
           pyinstaller --noconfirm --windowed --name ZipZap --icon icon.icns
           --add-data "assets:assets" --add-data "icon.png:."
           --collect-all customtkinter --collect-all pillow_heif main.py
+      - name: Zip app
+        run: ditto -c -k --keepParent dist/ZipZap.app dist/ZipZap-Mac.zip
       - name: Upload app
         uses: actions/upload-artifact@v4
         with:
           name: ZipZap-mac
-          path: dist/ZipZap.app
+          path: dist/ZipZap-Mac.zip
 
   release:
     needs: [build-windows, build-mac]
@@ -104,5 +108,5 @@ jobs:
           prerelease: ${{ !startsWith(github.ref, 'refs/tags/v') }}
           generate_release_notes: true
           files: |
-            ZipZap-windows/**
-            ZipZap-mac/**
+            ZipZap-windows/ZipZap-Windows.zip
+            ZipZap-mac/ZipZap-Mac.zip

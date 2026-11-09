@@ -99,88 +99,85 @@ def test_generate_without_model_is_not_configured(server):
         client.generate("hi")
 
 
-def test_generate_raises_ai_service_error_on_missing_model(server):
-    client = OllamaClient(server, "missing:model")
-    with pytest.raises(AIServiceError) as exc_info:
-        client.generate("hi")
-    assert "not found" in str(exc_info.value)
+def test_generate_with_missing_model_explains_download(server):
+    with pytest.raises(AIServiceError, match="ยังไม่ได้ดาวน์โหลดโมเดล"):
+        OllamaClient(server, "llama9:70b").generate("hi")
 
 
-def test_pull_model_streams_progress(server):
-    events = list(OllamaClient(server).pull_model("gemma3:4b"))
-
-    assert [status for status, _ in events] == ["pulling manifest", "downloading", "downloading", "success"]
-    assert events[1][1] == 40
-    assert events[2][1] == 100
+def test_generate_when_server_is_down():
+    with pytest.raises(AIServiceError, match="เชื่อมต่อ Ollama"):
+        OllamaClient("http://127.0.0.1:9", "gemma3:4b").generate("hi")
 
 
-def test_pull_model_survives_server_error(server):
-    with pytest.raises(AIServiceError):
-        list(OllamaClient(server).pull_model("broken:model"))
+def test_pull_reports_progress(server):
+    events = []
+    OllamaClient(server).pull_model("gemma3:12b", lambda *e: events.append(e))
+    assert events[0] == ("pulling manifest", 0, 0)
+    assert ("downloading", 100, 100) in events
+    assert FakeOllama.requests[-1] == ("/api/pull", {"model": "gemma3:12b", "stream": True})
 
 
-# ---------- helpers ----------
-
-def test_validate_url():
-    assert validate_url("localhost:11434") == "http://localhost:11434"
-    assert validate_url("http://192.168.1.10:11434/") == "http://192.168.1.10:11434"
-    assert validate_url("ftp://foo") is None
-    assert validate_url("") is None
+def test_pull_error_is_raised(server):
+    with pytest.raises(AIServiceError, match="does not exist"):
+        OllamaClient(server).pull_model("broken:model")
 
 
-def test_recommend_model():
-    models = [m.name for m in RECOMMENDED_MODELS]
-    assert recommend_model(16, models) == "qwen2.5-coder:7b"
-    assert recommend_model(8, models) == "gemma3:4b"
-    assert recommend_model(4, models) == "qwen2.5-coder:1.5b"
-    assert recommend_model(8, []) == "gemma3:4b"
-
-
-# ---------- AIRouter ----------
-
-def test_router_delegates_to_selected_provider(server):
-    gemini = GeminiClient()
-    ollama = OllamaClient(server, "gemma3:4b")
-    router = AIRouter(gemini, ollama, "ollama")
-
-    assert router.current_provider == "ollama"
-    assert router.active_client is ollama
-    assert router.is_configured is True
-    assert router.label == "Ollama (Local)"
-    assert router.generate("hi") == "Receipt_Starbucks"
-
-
-def test_router_switch_to_gemini_without_key_is_not_configured(server):
-    router = AIRouter(GeminiClient(), OllamaClient(server, "gemma3:4b"), "ollama")
-    router.switch("gemini")
-    assert router.current_provider == "gemini"
-    assert router.is_configured is False
-    with pytest.raises(AINotConfiguredError):
-        router.generate("hi")
-
-
-def test_router_rejects_unknown_provider():
+@pytest.mark.parametrize("url", ["file:///etc/passwd", "ftp://host", "localhost:11434", "http://"])
+def test_validate_url_rejects_non_http(url):
     with pytest.raises(ValueError):
-        AIRouter(GeminiClient(), OllamaClient(), "claude")
+        validate_url(url)
 
 
-# ---------- build_services integration ----------
+def test_validate_url_defaults_and_trims():
+    assert validate_url("") == "http://localhost:11434"
+    assert validate_url(" http://10.0.0.5:11434/ ") == "http://10.0.0.5:11434"
+
+
+def test_keeps_data_local_only_for_loopback():
+    assert OllamaClient("http://localhost:11434").keeps_data_local
+    assert OllamaClient("http://127.0.0.1:11434").keeps_data_local
+    assert not OllamaClient("https://my-vps.example.com").keeps_data_local
+
+
+@pytest.mark.parametrize("ram, expected", [
+    (32, "gemma3:12b"), (16, "gemma3:12b"), (8, "gemma3:4b"), (4, None), (None, RECOMMENDED_MODELS[-1].name),
+])
+def test_recommend_model(ram, expected):
+    model = recommend_model(ram)
+    assert (model.name if model else None) == expected
+
+
+# ---------- AIRouter and services ----------
+
+def test_router_forwards_to_active_provider():
+    gemini, local = GeminiClient(""), OllamaClient("http://localhost:11434", "gemma3:4b")
+    router = AIRouter([gemini, local], "gemini")
+    assert not router.is_configured
+    assert router.supports_file_upload
+
+    router.use("ollama")
+    assert router.is_configured
+    assert router.active is local
+    assert router.max_prompt_files == local.max_prompt_files
+
+
+def test_router_unknown_provider_falls_back_to_first():
+    router = AIRouter([GeminiClient(""), OllamaClient()], "something-else")
+    assert router.active_name == "gemini"
+
 
 def test_services_switch_provider_and_persist(tmp_path, monkeypatch):
-    monkeypatch.setattr(core.config, "CONFIG_PATH", str(tmp_path / "config.json"))
-
-    services = build_services()
-    assert services.llm.current_provider == "gemini"
-
-    services.switch_llm_provider("ollama")
-    assert services.llm.current_provider == "ollama"
-
-    reloaded = build_services()
-    assert reloaded.llm.current_provider == "ollama"
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.setattr(core.config, "is_frozen", lambda: True)
+    paths = [str(tmp_path / n) for n in ("config.json", "log.txt", "log.json")]
+    services = build_services(*paths)
 
     services.set_local_ai("http://127.0.0.1:11434", "gemma3:4b")
-    reloaded = build_services()
-    assert reloaded.ollama.url == "http://127.0.0.1:11434"
+    services.set_ai_provider("ollama")
+
+    assert services.organizer.llm.active_name == "ollama"
+    reloaded = build_services(*paths)
+    assert reloaded.llm.active_name == "ollama"
     assert reloaded.ollama.model == "gemma3:4b"
     with pytest.raises(ValueError):
         services.set_local_ai("file:///etc", "x")

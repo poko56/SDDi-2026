@@ -37,3 +37,72 @@ jobs:
           pip install -r requirements-dev.txt
       - name: Run pytest
         run: pytest
+
+  build-windows:
+    needs: [lint, test]
+    runs-on: windows-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install customtkinter pillow pillow_heif google-genai moviepy docx2pdf pypdf watchdog pyinstaller
+      - name: Build exe
+        run: >
+          pyinstaller --noconfirm --windowed --name ZipZap --icon icon.ico
+          --add-data "assets;assets" --add-data "icon.png;."
+          --collect-all customtkinter --collect-all pillow_heif main.py
+      - name: Upload exe
+        uses: actions/upload-artifact@v4
+        with:
+          name: ZipZap-windows
+          path: dist/ZipZap
+
+  build-mac:
+    needs: [lint, test]
+    runs-on: macos-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install customtkinter pillow pillow_heif google-genai moviepy docx2pdf pypdf watchdog pyinstaller
+      - name: Build app
+        run: >
+          pyinstaller --noconfirm --windowed --name ZipZap --icon icon.icns
+          --add-data "assets:assets" --add-data "icon.png:."
+          --collect-all customtkinter --collect-all pillow_heif main.py
+      - name: Upload app
+        uses: actions/upload-artifact@v4
+        with:
+          name: ZipZap-mac
+          path: dist/ZipZap.app
+
+  release:
+    needs: [build-windows, build-mac]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'latest' }}
+          prerelease: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+          generate_release_notes: true
+          files: |
+            ZipZap-windows/**
+            ZipZap-mac/**

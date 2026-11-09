@@ -224,3 +224,41 @@ class SettingsPage(BasePage):
         if self.services.ollama.model == name:
             note += " · กำลังใช้งาน"
         self.lbl_model_note.configure(text=note)
+        
+    def _pull_model(self):
+        name = self.var_model.get()
+        info = next((m for m in RECOMMENDED_MODELS if m.name == name), None)
+        size = f"ประมาณ {info.size_gb} GB" if info else "หลาย GB"
+        question = f"ดาวน์โหลดโมเดล {name} ({size}) จาก Ollama?\nอาจใช้เวลาหลายนาทีขึ้นกับความเร็วอินเทอร์เน็ต"
+        if not messagebox.askyesno("ดาวน์โหลดโมเดล", question):
+            return
+        self._downloading = True
+        self._update_model_buttons()
+        self.progress.set(0)
+        self.progress.pack(fill="x", padx=20, pady=(8, 0), before=self.entry_url.master)
+        self.lbl_progress.pack(anchor="w", padx=20, before=self.entry_url.master)
+        self.app.log(f"⬇️ เริ่มดาวน์โหลดโมเดล {name}")
+
+        def on_progress(status, completed, total):
+            self.app.call_in_ui(self._show_progress, status, completed, total)
+
+        def finished(_):
+            self._downloading = False
+            self.lbl_progress.configure(text=f"✅ ดาวน์โหลด {name} เสร็จแล้ว กด 'ใช้โมเดลนี้' เพื่อเริ่มใช้งาน")
+            self.app.log(f"✅ ดาวน์โหลดโมเดล {name} เสร็จแล้ว")
+            self._refresh_local_status()
+
+        def failed(error):
+            self._downloading = False
+            self.lbl_progress.configure(text=f"❌ {error}")
+            self.app.log(f"❌ ดาวน์โหลดโมเดล {name} ไม่สำเร็จ: {error}")
+            self._update_model_buttons()
+
+        self.app.run_background(lambda: self.services.ollama.pull_model(name, on_progress), finished, failed)
+
+    def _show_progress(self, status, completed, total):
+        if total:
+            self.progress.set(completed / total)
+            self.lbl_progress.configure(text=f"{status} — {completed / 1024 ** 3:.2f} / {total / 1024 ** 3:.2f} GB")
+        else:
+            self.lbl_progress.configure(text=status)

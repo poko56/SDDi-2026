@@ -6,8 +6,10 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 import pytest
 from PIL import Image
 
-from core.llm import AINotConfiguredError, AIServiceError
-from core.ollama import OllamaClient
+import core.config
+from core.llm import AINotConfiguredError, AIRouter, AIServiceError, GeminiClient
+from core.ollama import OllamaClient, RECOMMENDED_MODELS, recommend_model, validate_url
+from core.services import build_services
 
 
 class FakeOllama(BaseHTTPRequestHandler):
@@ -116,3 +118,64 @@ def test_pull_reports_progress(server):
 def test_pull_error_is_raised(server):
     with pytest.raises(AIServiceError, match="does not exist"):
         OllamaClient(server).pull_model("broken:model")
+
+
+@pytest.mark.parametrize("url", ["file:///etc/passwd", "ftp://host", "localhost:11434", "http://"])
+def test_validate_url_rejects_non_http(url):
+    with pytest.raises(ValueError):
+        validate_url(url)
+
+
+def test_validate_url_defaults_and_trims():
+    assert validate_url("") == "http://localhost:11434"
+    assert validate_url(" http://10.0.0.5:11434/ ") == "http://10.0.0.5:11434"
+
+
+def test_keeps_data_local_only_for_loopback():
+    assert OllamaClient("http://localhost:11434").keeps_data_local
+    assert OllamaClient("http://127.0.0.1:11434").keeps_data_local
+    assert not OllamaClient("https://my-vps.example.com").keeps_data_local
+
+
+@pytest.mark.parametrize("ram, expected", [
+    (32, "gemma3:12b"), (16, "gemma3:12b"), (8, "gemma3:4b"), (4, None), (None, RECOMMENDED_MODELS[-1].name),
+])
+def test_recommend_model(ram, expected):
+    model = recommend_model(ram)
+    assert (model.name if model else None) == expected
+
+
+# ---------- AIRouter and services ----------
+
+def test_router_forwards_to_active_provider():
+    gemini, local = GeminiClient(""), OllamaClient("http://localhost:11434", "gemma3:4b")
+    router = AIRouter([gemini, local], "gemini")
+    assert not router.is_configured
+    assert router.supports_file_upload
+
+    router.use("ollama")
+    assert router.is_configured
+    assert router.active is local
+    assert router.max_prompt_files == local.max_prompt_files
+
+
+def test_router_unknown_provider_falls_back_to_first():
+    router = AIRouter([GeminiClient(""), OllamaClient()], "something-else")
+    assert router.active_name == "gemini"
+
+
+def test_services_switch_provider_and_persist(tmp_path, monkeypatch):
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.setattr(core.config, "is_frozen", lambda: True)
+    paths = [str(tmp_path / n) for n in ("config.json", "log.txt", "log.json")]
+    services = build_services(*paths)
+
+    services.set_local_ai("http://127.0.0.1:11434", "gemma3:4b")
+    services.set_ai_provider("ollama")
+
+    assert services.organizer.llm.active_name == "ollama"
+    reloaded = build_services(*paths)
+    assert reloaded.llm.active_name == "ollama"
+    assert reloaded.ollama.model == "gemma3:4b"
+    with pytest.raises(ValueError):
+        services.set_local_ai("file:///etc", "x")

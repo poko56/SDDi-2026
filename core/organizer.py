@@ -30,6 +30,19 @@ PDF_TEXT_PAGES = 3
 NOT_CONFIGURED_MESSAGE = "กรุณาตั้งค่า AI ในหน้า Settings ก่อน (ใส่ Gemini API Key หรือเลือกโมเดล Local AI)"
 
 
+THAI_MONTHS = (r"มกราคม|กุมภาพันธ์|มีนาคม|เมษายน|พฤษภาคม|มิถุนายน|กรกฎาคม|สิงหาคม|กันยายน|ตุลาคม|พฤศจิกายน|ธันวาคม"
+               r"|ม\.ค\.|ก\.พ\.|มี\.ค\.|เม\.ย\.|พ\.ค\.|มิ\.ย\.|ก\.ค\.|ส\.ค\.|ก\.ย\.|ต\.ค\.|พ\.ย\.|ธ\.ค\.")
+_BUDDHIST_YEAR = re.compile(rf"((?:พ\.ศ\.|{THAI_MONTHS})\s*)(2[45]\d\d)\b")
+
+
+def annotate_buddhist_years(text):
+    """Add the Gregorian year after Thai Buddhist Era years ("ตุลาคม 2569" -> "ตุลาคม 2569 (ค.ศ. 2026)").
+
+    Small local models often get the -543 conversion wrong, so it is done here instead.
+    """
+    return _BUDDHIST_YEAR.sub(lambda m: f"{m.group(1)}{m.group(2)} (ค.ศ. {int(m.group(2)) - 543})", text)
+
+
 class SortStrategy:
     """Decides which sub-folder a file belongs in. Add a subclass to add a new way to organize."""
 
@@ -108,7 +121,7 @@ class FileOrganizer:
             return [uploaded, RENAME_PROMPT], uploaded
         with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
             text = f.read(MAX_TEXT_CHARS)
-        return [RENAME_PROMPT, f"File content:\n{text}"], None
+        return [RENAME_PROMPT, f"File content:\n{annotate_buddhist_years(text)}"], None
 
     def smart_rename(self, file_path):
         """Ask the AI for a meaningful name and rename the file. Returns (ok, new_name_or_error)."""

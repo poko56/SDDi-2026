@@ -1,0 +1,207 @@
+import datetime
+import os
+import re
+import shutil
+
+from PIL import Image
+from pypdf import PdfReader
+from pypdf.errors import PdfReadError
+from pillow_heif import register_heif_opener
+
+from core.exclusion import ExclusionPolicy
+from core.file_types import category_of, extension_of
+from core.llm import AINotConfiguredError, AIServiceError
+from core.paths import unique_path
+
+register_heif_opener()
+
+RENAME_PROMPT = (
+    "Please analyze this file and suggest a concise, meaningful filename (without extension). "
+    "If the document or content is mainly in Thai, the filename MUST be in Thai. "
+    "Use format like YYYYMMDD_Topic or just a descriptive name. Use underscores (_) instead of spaces. "
+    "Thai dates often use the Buddhist Era (พ.ศ.): subtract 543 to get the year for YYYYMMDD "
+    "(for example พ.ศ. 2569 is 2026). "
+    "Do not use special characters. Reply ONLY with the suggested filename and nothing else."
+)
+IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".heic"}
+RENAMEABLE_EXTENSIONS = IMAGE_EXTENSIONS | {".pdf", ".txt"}
+_UNSAFE_FILENAME_CHARS = re.compile(r"[<>:\"/\\|?*`'\x00-\x1f]")
+MAX_NAME_LENGTH = 120
+MAX_TEXT_CHARS = 5000
+PDF_TEXT_PAGES = 3
+NOT_CONFIGURED_MESSAGE = "กรุณาตั้งค่า AI ในหน้า Settings ก่อน (ใส่ Gemini API Key หรือเลือกโมเดล Local AI)"
+
+
+THAI_MONTHS = (r"มกราคม|กุมภาพันธ์|มีนาคม|เมษายน|พฤษภาคม|มิถุนายน|กรกฎาคม|สิงหาคม|กันยายน|ตุลาคม|พฤศจิกายน|ธันวาคม"
+               r"|ม\.ค\.|ก\.พ\.|มี\.ค\.|เม\.ย\.|พ\.ค\.|มิ\.ย\.|ก\.ค\.|ส\.ค\.|ก\.ย\.|ต\.ค\.|พ\.ย\.|ธ\.ค\.")
+_BUDDHIST_YEAR = re.compile(rf"((?:พ\.ศ\.|{THAI_MONTHS})\s*)(2[45]\d\d)\b")
+
+
+def annotate_buddhist_years(text):
+    """Add the Gregorian year after Thai Buddhist Era years ("ตุลาคม 2569" -> "ตุลาคม 2569 (ค.ศ. 2026)").
+
+    Small local models often get the -543 conversion wrong, so it is done here instead.
+    """
+    return _BUDDHIST_YEAR.sub(lambda m: f"{m.group(1)}{m.group(2)} (ค.ศ. {int(m.group(2)) - 543})", text)
+
+
+class UnreadableFileError(Exception):
+    """The file cannot be turned into something the AI can read."""
+
+
+_PDF_ERRORS = (PdfReadError, ValueError, KeyError, OSError, NotImplementedError)
+
+
+def extract_pdf_text(path, max_pages=PDF_TEXT_PAGES, max_chars=MAX_TEXT_CHARS):
+    """Text of the first pages of a PDF, for AI providers that cannot read PDF files themselves."""
+    try:
+        reader = PdfReader(path)
+        text = "\n".join((page.extract_text() or "") for page in reader.pages[:max_pages])
+    except _PDF_ERRORS as e:
+        raise UnreadableFileError(f"อ่าน PDF ไม่ได้: {e}") from e
+    return text.strip()[:max_chars]
+
+
+def extract_pdf_first_image(path):
+    """The largest picture on the first page (a scanned PDF is usually one big image), or None."""
+    try:
+        images = PdfReader(path).pages[0].images
+        pictures = [img.image for img in images if img.image is not None]
+    except (IndexError, *_PDF_ERRORS):
+        return None
+    return max(pictures, key=lambda im: im.width * im.height, default=None)
+
+
+class SortStrategy:
+    """Decides which sub-folder a file belongs in. Add a subclass to add a new way to organize."""
+
+    label = ""
+
+    def folder_for(self, path):
+        raise NotImplementedError
+
+
+class ByFileType(SortStrategy):
+    label = "ประเภทไฟล์"
+
+    def folder_for(self, path):
+        return category_of(path)
+
+
+class ByModifiedMonth(SortStrategy):
+    label = "เดือนที่แก้ไข"
+
+    def folder_for(self, path):
+        return datetime.datetime.fromtimestamp(os.path.getmtime(path)).strftime("%Y_%m")
+
+
+def sanitize_filename(name):
+    name = name.strip().replace("\r", "").replace("\n", "").replace(" ", "_")
+    name = _UNSAFE_FILENAME_CHARS.sub("", name).strip("._")
+    return name[:MAX_NAME_LENGTH]
+
+
+class FileOrganizer:
+    def __init__(self, logger, llm=None, exclusion=None):
+        self.logger = logger
+        self.llm = llm
+        self.exclusion = exclusion or ExclusionPolicy()
+
+    def organize_file(self, file_path, root_folder, strategy):
+        """Move one file into <root_folder>/<strategy folder>/. Returns the new path, or None if skipped."""
+        if not os.path.isfile(file_path) or self.exclusion.is_excluded(file_path):
+            return None
+        target_dir = os.path.join(root_folder, strategy.folder_for(file_path))
+        if os.path.dirname(os.path.abspath(file_path)) == os.path.abspath(target_dir):
+            return None
+        os.makedirs(target_dir, exist_ok=True)
+        new_path = unique_path(os.path.join(target_dir, os.path.basename(file_path)))
+        shutil.move(file_path, new_path)
+        self.logger.log_move(file_path, new_path)
+        return new_path
+
+    def organize_folder(self, folder_path, strategy):
+        """Organize the files directly inside folder_path (sub-folders are left alone)."""
+        if not os.path.isdir(folder_path):
+            return False, "ไม่พบโฟลเดอร์ที่ระบุ"
+        moved, failed = 0, 0
+        with os.scandir(folder_path) as entries:
+            files = [e.path for e in entries if e.is_file() and not e.name.startswith(".")]
+        for path in files:
+            try:
+                if self.organize_file(path, folder_path, strategy):
+                    moved += 1
+            except OSError as e:
+                failed += 1
+                self.logger.log_action("ERROR", f"Failed to organize {path}: {e}")
+        message = f"จัดไฟล์ตาม{strategy.label}สำเร็จ {moved} ไฟล์"
+        if failed:
+            message += f" (ย้ายไม่ได้ {failed} ไฟล์)"
+        return True, message
+
+    def _build_rename_prompt(self, file_path, ext):
+        """Return (contents, uploaded_file_or_None) for the AI request."""
+        if ext in IMAGE_EXTENSIONS:
+            with Image.open(file_path) as img:
+                img.load()
+                return [RENAME_PROMPT, img.copy()], None
+        if ext == ".pdf":
+            if self.llm.supports_file_upload:
+                uploaded = self.llm.upload_file(file_path)
+                return [uploaded, RENAME_PROMPT], uploaded
+            text = extract_pdf_text(file_path)
+            if not text:
+                # A scanned PDF has no text layer: show the page image to a vision model instead
+                page_image = extract_pdf_first_image(file_path)
+                if page_image is None:
+                    raise UnreadableFileError("PDF นี้ไม่มีทั้งข้อความและรูปภาพให้ AI อ่าน")
+                return [RENAME_PROMPT, page_image], None
+        else:
+            with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+                text = f.read(MAX_TEXT_CHARS)
+        return [RENAME_PROMPT, f"File content:\n{annotate_buddhist_years(text)}"], None
+
+    def smart_rename(self, file_path):
+        """Ask the AI for a meaningful name and rename the file. Returns (ok, new_name_or_error)."""
+        if self.llm is None or not self.llm.is_configured:
+            return False, NOT_CONFIGURED_MESSAGE
+        ext = extension_of(file_path)
+        if ext not in RENAMEABLE_EXTENSIONS:
+            return False, f"ฟังก์ชันนี้ยังไม่รองรับไฟล์นามสกุล {ext}"
+
+        uploaded = None
+        try:
+            contents, uploaded = self._build_rename_prompt(file_path, ext)
+            suggestion = self.llm.generate(contents, vision=True)
+        except AINotConfiguredError:
+            return False, NOT_CONFIGURED_MESSAGE
+        except AIServiceError as e:
+            if "INVALID_ARGUMENT" in str(e):
+                return False, ("ไฟล์นี้อาจเป็นไฟล์จำลอง (Fake file) หรือไฟล์เสียหาย "
+                               "AI จึงไม่สามารถอ่านเนื้อหาข้างในได้ครับ")
+            return False, f"เชื่อมต่อ AI ไม่สำเร็จ: {e}"
+        except UnreadableFileError as e:
+            return False, str(e)
+        except OSError as e:
+            return False, f"อ่านไฟล์ไม่ได้: {e}"
+        finally:
+            if uploaded is not None:
+                self.llm.delete_file(uploaded)
+
+        new_stem = sanitize_filename(suggestion)
+        if not new_stem:
+            return False, "AI ไม่ได้เสนอชื่อไฟล์ใหม่"
+        old_name = os.path.basename(file_path)
+        new_name = new_stem + ext
+        if new_name == old_name:
+            return False, "ชื่อเดิมสื่อความหมายอยู่แล้ว ไม่ต้องเปลี่ยน"
+        new_path = os.path.join(os.path.dirname(file_path), new_name)
+        if new_name.lower() != old_name.lower():
+            # A case-only change must not count the file itself as a name clash (macOS/Windows ignore case)
+            new_path = unique_path(new_path)
+        try:
+            shutil.move(file_path, new_path)
+        except OSError as e:
+            return False, f"เปลี่ยนชื่อไม่สำเร็จ: {e}"
+        self.logger.log_move(file_path, new_path)
+        return True, os.path.basename(new_path)

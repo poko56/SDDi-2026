@@ -1,8 +1,10 @@
 """Tests for the Gemini wrapper (no network calls)."""
 import pytest
 
+import core.config
 import core.llm
 from core.llm import AINotConfiguredError, AIServiceError, GeminiClient
+from core.services import build_services
 
 
 class FakeGenaiClient:
@@ -52,3 +54,31 @@ def test_changing_key_recreates_sdk_client(fake_genai):
 def test_sdk_errors_are_wrapped(fake_genai):
     with pytest.raises(AIServiceError, match="quota exceeded"):
         GeminiClient("key").generate("boom")
+
+
+@pytest.fixture
+def services(tmp_path, monkeypatch):
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.setattr(core.config, "is_frozen", lambda: True)  # Ignore a developer's local api_key.txt
+    return build_services(str(tmp_path / "config.json"), str(tmp_path / "log.txt"), str(tmp_path / "log.json"))
+
+
+def test_services_share_one_exclusion_policy(services, tmp_path):
+    services.set_excluded_folders([str(tmp_path / "private")])
+
+    path = str(tmp_path / "private" / "a.txt")
+    assert services.cleaner.exclusion.is_excluded(path)
+    assert services.organizer.exclusion.is_excluded(path)
+    assert services.watcher.exclusion.is_excluded(path)
+    assert services.config.get("excluded_folders") == [str(tmp_path / "private")]
+
+
+def test_services_share_one_llm_client(services):
+    assert not services.llm.is_configured
+    services.set_api_key("new-key")
+    assert services.organizer.llm is services.llm
+    assert services.assistant.llm is services.llm
+    assert services.llm.is_configured
+
+    services.set_api_key("")
+    assert not services.llm.is_configured

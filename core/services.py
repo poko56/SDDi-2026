@@ -9,6 +9,7 @@ from core.logger import ActionLogger
 from core.organizer import FileOrganizer
 from core.paths import user_data_path
 from core.stats import StorageAnalyzer
+from core.watcher import WatcherManager
 
 
 @dataclass
@@ -20,6 +21,7 @@ class AppServices:
     organizer: FileOrganizer
     converter: FileConverter
     analyzer: StorageAnalyzer
+    watcher: WatcherManager
 
     def set_excluded_folders(self, folders):
         self.config.set("excluded_folders", folders)
@@ -38,4 +40,5 @@ def build_services(config_path=None, log_txt=None, log_json=None):
         organizer=FileOrganizer(logger, exclusion=exclusion),
         converter=FileConverter(logger),
         analyzer=StorageAnalyzer(),
+        watcher=WatcherManager(logger, exclusion),
     )

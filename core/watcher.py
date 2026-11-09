@@ -2,6 +2,7 @@ import os
 import threading
 
 from watchdog.events import FileSystemEventHandler
+from watchdog.observers import Observer
 
 from core.exclusion import ExclusionPolicy
 from core.paths import TRASH_DIR_NAME
@@ -79,3 +80,40 @@ class SmartFileHandler(FileSystemEventHandler):
     def on_moved(self, event):
         if not event.is_directory and self._relevant(event.dest_path):
             self._schedule(event.dest_path)
+
+
+class WatcherManager:
+    def __init__(self, logger, exclusion=None):
+        self.logger = logger
+        self.exclusion = exclusion or ExclusionPolicy()
+        self.observer = None
+        self._handler = None
+
+    @property
+    def is_running(self):
+        return self.observer is not None
+
+    def start_watching(self, path, callbacks):
+        if not os.path.isdir(path):
+            return False, "ไม่พบโฟลเดอร์เป้าหมาย"
+        if self.observer is not None:
+            self.stop_watching()
+        os.makedirs(os.path.join(path, CONVERT_FOLDER_NAME), exist_ok=True)
+
+        self._handler = SmartFileHandler(path, self.logger, callbacks, self.exclusion)
+        self.observer = Observer()
+        self.observer.schedule(self._handler, path, recursive=True)
+        self.observer.start()
+        self.logger.log_action("WATCHER_START", f"Started monitoring {path}")
+        return True, f"ระบบเริ่มจับตาดูการเปลี่ยนแปลงในโฟลเดอร์ {path} แล้ว"
+
+    def stop_watching(self):
+        if self.observer is None:
+            return False, "ระบบไม่ได้เปิดทำงานอยู่"
+        self._handler.cancel_pending()
+        self.observer.stop()
+        self.observer.join()
+        self.observer = None
+        self._handler = None
+        self.logger.log_action("WATCHER_STOP", "Stopped monitoring")
+        return True, "หยุดระบบจับตาดูโฟลเดอร์แล้ว"

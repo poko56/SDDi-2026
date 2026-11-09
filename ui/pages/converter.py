@@ -87,3 +87,52 @@ class ConverterPage(BasePage):
         self.menu_target.configure(values=targets)
         self.var_target.set(targets[0])
         self._refresh_list()
+        
+    def _choose_output(self):
+        folder = filedialog.askdirectory(title="เลือกโฟลเดอร์สำหรับบันทึกไฟล์")
+        if folder:
+            self.var_output.set(folder)
+
+    def _add_files(self):
+        chosen = filedialog.askopenfilenames(title="เลือกไฟล์ที่ต้องการแปลง",
+                                             filetypes=self.services.converter.filetypes_for(self.mode))
+        for path in chosen:
+            if path not in self.files:
+                self.files.append(path)
+        self._refresh_list()
+
+    def _remove_file(self, path):
+        self.files.remove(path)
+        self._refresh_list()
+
+    def _refresh_list(self):
+        for widget in self.list_frame.winfo_children():
+            widget.destroy()
+        self.btn_start.configure(state="normal" if self.files else "disabled")
+        target = self.var_target.get()
+        target_label = "⬇️ Compress" if target.startswith("Compress") else target
+
+        for path in self.files:
+            row = ctk.CTkFrame(self.list_frame, fg_color=BG_CARD, corner_radius=10, border_width=1,
+                               border_color=BORDER)
+            row.pack(fill="x", pady=5)
+            ctk.CTkButton(row, text="✕", width=30, height=30, fg_color="transparent",
+                          hover_color=("#FEE2E2", "#7F1D1D"), text_color="#EF4444",
+                          command=lambda p=path: self._remove_file(p)).pack(side="right", padx=(0, 10))
+            pill = ctk.CTkFrame(row, fg_color=("#DBEAFE", "#1E3A8A"), corner_radius=10)
+            pill.pack(side="right", padx=15)
+            ctk.CTkLabel(pill, text=target_label, text_color=("#1D4ED8", "#93C5FD"),
+                         font=font(12, "bold")).pack(padx=10, pady=2)
+            ctk.CTkLabel(row, text="➔", text_color=TEXT_MUTED).pack(side="right")
+
+            icon = create_icon_image(MODE_ICONS.get(self.mode, Icons.DOCUMENT), ("#D1D5DB", "#64748B"), 24)
+            ctk.CTkLabel(row, image=icon, text="").pack(side="left", padx=15, pady=10)
+            info = ctk.CTkFrame(row, fg_color="transparent")
+            info.pack(side="left", fill="x", expand=True)
+            ctk.CTkLabel(info, text=os.path.basename(path), font=font(13, "bold"),
+                         text_color=TEXT_MAIN).pack(anchor="w", pady=(5, 0))
+            try:
+                size = format_size(os.path.getsize(path))
+            except OSError:
+                size = "ไม่พบไฟล์"
+            ctk.CTkLabel(info, text=size, text_color=TEXT_MUTED, font=font(11)).pack(anchor="w", pady=(0, 5))

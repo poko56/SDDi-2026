@@ -262,3 +262,73 @@ class SettingsPage(BasePage):
             self.lbl_progress.configure(text=f"{status} — {completed / 1024 ** 3:.2f} / {total / 1024 ** 3:.2f} GB")
         else:
             self.lbl_progress.configure(text=status)
+
+    def _use_model(self):
+        name = self.var_model.get()
+        self.services.set_local_ai(self.services.ollama.base_url, name)
+        self.services.set_ai_provider("ollama")
+        self.var_provider.set(PROVIDER_LABELS["ollama"])
+        self._update_model_buttons()
+        self._refresh_privacy_label()
+        self._refresh_about()
+        self.app.log(f"🤖 ใช้ Local AI: {name}")
+
+    def _save_url(self):
+        try:
+            self.services.set_local_ai(self.entry_url.get(), self.services.ollama.model)
+        except ValueError as e:
+            messagebox.showerror("Ollama server", str(e))
+            return
+        self.entry_url.delete(0, "end")
+        self.entry_url.insert(0, self.services.ollama.base_url)
+        self.app.log(f"🔗 ตั้ง Ollama server เป็น {self.services.ollama.base_url}")
+        self._refresh_local_status()
+
+    # ---------- Excluded folders ----------
+
+    def _build_exclusions_card(self, parent):
+        box = self._section(parent, "โฟลเดอร์ยกเว้น",
+                            "Cleaner, การจัดไฟล์ และ Auto Monitor จะไม่แตะไฟล์ในโฟลเดอร์เหล่านี้")
+        self.exclusion_list = ctk.CTkFrame(box, fg_color="transparent")
+        self.exclusion_list.pack(fill="x", padx=20, pady=(10, 0))
+        add_button = self._small_button(box, "+ เพิ่มโฟลเดอร์", self._add_exclusion, width=140)
+        add_button.pack(anchor="w", padx=20, pady=(5, 15))
+        self._render_exclusions()
+
+    def _render_exclusions(self):
+        for widget in self.exclusion_list.winfo_children():
+            widget.destroy()
+        folders = self.services.exclusion.folders
+        if not folders:
+            ctk.CTkLabel(self.exclusion_list, text="ยังไม่มีโฟลเดอร์ยกเว้น", text_color=TEXT_MUTED).pack(anchor="w")
+        for folder in folders:
+            row = ctk.CTkFrame(self.exclusion_list, fg_color=BG_SUBTLE, corner_radius=8)
+            row.pack(fill="x", pady=2)
+            ctk.CTkLabel(row, text=folder, text_color=TEXT_MAIN).pack(side="left", padx=10, pady=4)
+            ctk.CTkButton(row, text="✕", width=28, height=28, fg_color="transparent", text_color="#EF4444",
+                          hover_color=("#FEE2E2", "#7F1D1D"),
+                          command=lambda f=folder: self._remove_exclusion(f)).pack(side="right", padx=4)
+
+    def _add_exclusion(self):
+        folder = filedialog.askdirectory(title="เลือกโฟลเดอร์ที่ไม่ต้องการให้ ZipZap แตะ")
+        if folder:
+            folders = self.services.exclusion.folders
+            if folder not in folders:
+                self.services.set_excluded_folders(folders + [folder])
+                self._render_exclusions()
+
+    def _remove_exclusion(self, folder):
+        self.services.set_excluded_folders([f for f in self.services.exclusion.folders if f != folder])
+        self._render_exclusions()
+
+    # ---------- About ----------
+
+    def _build_about_card(self, parent):
+        box = self._section(parent, "About ZipZap", f"Version {APP_VERSION}\nPython + CustomTkinter")
+        self.lbl_about_ai = ctk.CTkLabel(box, text="", font=font(12), text_color=TEXT_MUTED, justify="left")
+        self.lbl_about_ai.pack(anchor="w", padx=20, pady=(0, 15))
+        self._refresh_about()
+
+    def _refresh_about(self):
+        llm = self.services.llm
+        self.lbl_about_ai.configure(text=f"AI ที่ใช้อยู่: {llm.label} — {llm.model_description}")

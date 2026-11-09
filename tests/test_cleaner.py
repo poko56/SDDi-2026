@@ -112,3 +112,37 @@ def test_scan_skips_trash_folder(logger, workdir):
 
 def test_scan_missing_folder_returns_empty(logger, workdir):
     assert StorageCleaner(logger).scan(str(workdir / "nope")) == []
+
+
+def test_clean_files_moves_to_trash_keeping_relative_path(logger, workdir):
+    target = write(workdir / "sub" / "x.tmp", "junk")
+
+    count, moved_bytes = StorageCleaner(logger).clean_files([str(target)], str(workdir))
+
+    assert (count, moved_bytes) == (1, 4)
+    assert not target.exists()
+    assert (workdir / TRASH_DIR_NAME / "sub" / "x.tmp").read_text() == "junk"
+
+
+def test_clean_files_does_not_overwrite_existing_trash(logger, workdir):
+    write(workdir / TRASH_DIR_NAME / "x.tmp", "older")
+    target = write(workdir / "x.tmp", "newer")
+
+    StorageCleaner(logger).clean_files([str(target)], str(workdir))
+
+    assert (workdir / TRASH_DIR_NAME / "x.tmp").read_text() == "older"
+    assert (workdir / TRASH_DIR_NAME / "x_1.tmp").read_text() == "newer"
+
+
+def test_clean_files_can_be_undone(logger, workdir):
+    target = write(workdir / "x.tmp", "junk")
+    StorageCleaner(logger).clean_files([str(target)], str(workdir))
+
+    ok, _ = logger.undo_last_action()
+
+    assert ok
+    assert target.read_text() == "junk"
+
+
+def test_clean_files_skips_missing_paths(logger, workdir):
+    assert StorageCleaner(logger).clean_files([str(workdir / "ghost.tmp")], str(workdir)) == (0, 0)

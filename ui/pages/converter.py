@@ -136,3 +136,28 @@ class ConverterPage(BasePage):
             except OSError:
                 size = "ไม่พบไฟล์"
             ctk.CTkLabel(info, text=size, text_color=TEXT_MUTED, font=font(11)).pack(anchor="w", pady=(0, 5))
+            
+    def _convert(self):
+        files = list(self.files)
+        mode, target = self.mode, self.var_target.get()
+        output = self.var_output.get()
+        output_dir = SAME_AS_SOURCE if output == SAME_FOLDER_LABEL else output
+        self.btn_start.configure(state="disabled", text="⏳ กำลังแปลงไฟล์...")
+
+        def convert_all():
+            succeeded = 0
+            for path in files:
+                self.app.log(f"⏳ กำลังแปลงไฟล์: {os.path.basename(path)}")
+                ok, result = self.services.converter.convert(path, mode, target, output_dir)
+                self.app.log(f"✅ สำเร็จ: {result}" if ok else f"❌ ผิดพลาด: {result}")
+                succeeded += ok
+            return succeeded
+
+        def done(succeeded):
+            self.app.log(f"🎉 แปลงไฟล์เสร็จสิ้น! ทำสำเร็จ {succeeded}/{len(files)} ไฟล์")
+            self.files.clear()
+            self._refresh_list()
+            self.btn_start.configure(text="🔄 เริ่มแปลงไฟล์")
+            messagebox.showinfo("เสร็จสิ้น", f"แปลงไฟล์เสร็จสิ้น!\nทำสำเร็จ {succeeded} จาก {len(files)} ไฟล์")
+
+        self.app.run_background(convert_all, done)

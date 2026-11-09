@@ -55,7 +55,7 @@ def build_services(config_path=None, log_txt=None, log_json=None):
         exclusion=exclusion,
         llm=llm,
         cleaner=StorageCleaner(logger, exclusion),
-        organizer=FileOrganizer(logger, exclusion=exclusion),
+        organizer=FileOrganizer(logger, llm, exclusion),
         converter=FileConverter(logger),
         analyzer=StorageAnalyzer(),
         watcher=WatcherManager(logger, exclusion),

@@ -76,3 +76,33 @@ class GeminiClient:
         except Exception:
             # Best effort: Gemini deletes uploaded files on its own after 48h
             pass
+
+
+class AIRouter:
+    """Proxy that forwards every call to the active provider.
+
+    Services keep a reference to this one object, so switching provider in
+    Settings takes effect everywhere without rebuilding anything.
+    """
+
+    def __init__(self, providers, active):
+        self.providers = {p.name: p for p in providers}
+        self._active = None
+        self.use(active)
+
+    def use(self, name):
+        if name not in self.providers:
+            name = next(iter(self.providers))
+        self._active = self.providers[name]
+
+    @property
+    def active(self):
+        return self._active
+
+    @property
+    def active_name(self):
+        return self._active.name
+
+    def __getattr__(self, attr):
+        # Only reached for attributes not defined on the router itself
+        return getattr(self._active, attr)

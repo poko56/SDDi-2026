@@ -4,6 +4,8 @@ import re
 import shutil
 
 from PIL import Image
+from pypdf import PdfReader
+from pypdf.errors import PdfReadError
 from pillow_heif import register_heif_opener
 
 from core.exclusion import ExclusionPolicy
@@ -28,6 +30,46 @@ MAX_NAME_LENGTH = 120
 MAX_TEXT_CHARS = 5000
 PDF_TEXT_PAGES = 3
 NOT_CONFIGURED_MESSAGE = "กรุณาตั้งค่า AI ในหน้า Settings ก่อน (ใส่ Gemini API Key หรือเลือกโมเดล Local AI)"
+
+
+THAI_MONTHS = (r"มกราคม|กุมภาพันธ์|มีนาคม|เมษายน|พฤษภาคม|มิถุนายน|กรกฎาคม|สิงหาคม|กันยายน|ตุลาคม|พฤศจิกายน|ธันวาคม"
+               r"|ม\.ค\.|ก\.พ\.|มี\.ค\.|เม\.ย\.|พ\.ค\.|มิ\.ย\.|ก\.ค\.|ส\.ค\.|ก\.ย\.|ต\.ค\.|พ\.ย\.|ธ\.ค\.")
+_BUDDHIST_YEAR = re.compile(rf"((?:พ\.ศ\.|{THAI_MONTHS})\s*)(2[45]\d\d)\b")
+
+
+def annotate_buddhist_years(text):
+    """Add the Gregorian year after Thai Buddhist Era years ("ตุลาคม 2569" -> "ตุลาคม 2569 (ค.ศ. 2026)").
+
+    Small local models often get the -543 conversion wrong, so it is done here instead.
+    """
+    return _BUDDHIST_YEAR.sub(lambda m: f"{m.group(1)}{m.group(2)} (ค.ศ. {int(m.group(2)) - 543})", text)
+
+
+class UnreadableFileError(Exception):
+    """The file cannot be turned into something the AI can read."""
+
+
+_PDF_ERRORS = (PdfReadError, ValueError, KeyError, OSError, NotImplementedError)
+
+
+def extract_pdf_text(path, max_pages=PDF_TEXT_PAGES, max_chars=MAX_TEXT_CHARS):
+    """Text of the first pages of a PDF, for AI providers that cannot read PDF files themselves."""
+    try:
+        reader = PdfReader(path)
+        text = "\n".join((page.extract_text() or "") for page in reader.pages[:max_pages])
+    except _PDF_ERRORS as e:
+        raise UnreadableFileError(f"อ่าน PDF ไม่ได้: {e}") from e
+    return text.strip()[:max_chars]
+
+
+def extract_pdf_first_image(path):
+    """The largest picture on the first page (a scanned PDF is usually one big image), or None."""
+    try:
+        images = PdfReader(path).pages[0].images
+        pictures = [img.image for img in images if img.image is not None]
+    except (IndexError, *_PDF_ERRORS):
+        return None
+    return max(pictures, key=lambda im: im.width * im.height, default=None)
 
 
 class SortStrategy:
@@ -104,11 +146,20 @@ class FileOrganizer:
                 img.load()
                 return [RENAME_PROMPT, img.copy()], None
         if ext == ".pdf":
-            uploaded = self.llm.upload_file(file_path)
-            return [uploaded, RENAME_PROMPT], uploaded
-        with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-            text = f.read(MAX_TEXT_CHARS)
-        return [RENAME_PROMPT, f"File content:\n{text}"], None
+            if self.llm.supports_file_upload:
+                uploaded = self.llm.upload_file(file_path)
+                return [uploaded, RENAME_PROMPT], uploaded
+            text = extract_pdf_text(file_path)
+            if not text:
+                # A scanned PDF has no text layer: show the page image to a vision model instead
+                page_image = extract_pdf_first_image(file_path)
+                if page_image is None:
+                    raise UnreadableFileError("PDF นี้ไม่มีทั้งข้อความและรูปภาพให้ AI อ่าน")
+                return [RENAME_PROMPT, page_image], None
+        else:
+            with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+                text = f.read(MAX_TEXT_CHARS)
+        return [RENAME_PROMPT, f"File content:\n{annotate_buddhist_years(text)}"], None
 
     def smart_rename(self, file_path):
         """Ask the AI for a meaningful name and rename the file. Returns (ok, new_name_or_error)."""
@@ -129,6 +180,8 @@ class FileOrganizer:
                 return False, ("ไฟล์นี้อาจเป็นไฟล์จำลอง (Fake file) หรือไฟล์เสียหาย "
                                "AI จึงไม่สามารถอ่านเนื้อหาข้างในได้ครับ")
             return False, f"เชื่อมต่อ AI ไม่สำเร็จ: {e}"
+        except UnreadableFileError as e:
+            return False, str(e)
         except OSError as e:
             return False, f"อ่านไฟล์ไม่ได้: {e}"
         finally:

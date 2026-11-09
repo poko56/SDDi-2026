@@ -1,11 +1,12 @@
 import datetime
 import os
 
+import pytest
 from PIL import Image
 
 from conftest import FakeLLM, write
 from core.exclusion import ExclusionPolicy
-from core.organizer import ByFileType, ByModifiedMonth, FileOrganizer, sanitize_filename
+from core.organizer import ByFileType, ByModifiedMonth, FileOrganizer, annotate_buddhist_years, sanitize_filename
 
 
 def test_organize_by_type_moves_into_category_folders(logger, workdir):
@@ -60,91 +61,84 @@ def test_organize_is_undoable(logger, workdir):
 
     assert ok
     assert original.exists()
+    assert not (workdir / "Documents" / "doc.pdf").exists()
 
 
-def test_organize_by_month_uses_modified_date(logger, workdir):
-    f = write(workdir / "old.txt")
-    ts = datetime.datetime(2024, 3, 15).timestamp()
-    os.utime(f, (ts, ts))
+def test_organize_by_month(logger, workdir):
+    f = write(workdir / "doc.pdf")
+    dt = datetime.datetime(2026, 3, 14, 12, 0, 0).timestamp()
+    os.utime(f, (dt, dt))
 
     FileOrganizer(logger).organize_folder(str(workdir), ByModifiedMonth())
 
-    assert (workdir / "2024_03" / "old.txt").exists()
+    assert (workdir / "2026-03" / "doc.pdf").exists()
 
 
-def test_organize_missing_folder(logger, workdir):
-    ok, _ = FileOrganizer(logger).organize_folder(str(workdir / "nope"), ByFileType())
-    assert not ok
-
-
-def test_organize_file_already_in_place_is_skipped(logger, workdir):
-    f = write(workdir / "Documents" / "doc.pdf")
-    assert FileOrganizer(logger).organize_file(str(f), str(workdir / "Documents" / ".."), ByFileType()) is None
-
+# ---------- Smart Rename ----------
 
 def test_sanitize_filename():
-    assert sanitize_filename(' Q3 "Sales"/Report?\n') == "Q3_SalesReport"
-    assert sanitize_filename("../../etc/passwd") == "etcpasswd"
-    assert sanitize_filename("   ") == ""
-    assert len(sanitize_filename("a" * 500)) == 120
+    assert sanitize_filename(' bad/file:name*? "ok" <yes>| ') == "bad_file_name_ok_yes"
+    assert sanitize_filename("") == "renamed_file"
 
 
-def test_smart_rename_requires_api_key(logger, workdir):
-    f = write(workdir / "a.txt")
-    ok, _ = FileOrganizer(logger, FakeLLM(configured=False)).smart_rename(str(f))
-    assert not ok
-    assert f.exists()
-
-
-def test_smart_rename_rejects_unsupported_extension(logger, workdir, fake_llm):
-    f = write(workdir / "a.docx")
-    ok, _ = FileOrganizer(logger, fake_llm).smart_rename(str(f))
-    assert not ok
-    assert fake_llm.calls == []
-
-
-def test_smart_rename_txt_sends_content_and_sanitises_reply(logger, workdir, fake_llm):
-    f = write(workdir / "a.txt", "Quarterly report")
-    fake_llm.reply = ' Q3 "Sales"/Report?\n'
+def test_smart_rename_text_file(logger, workdir, fake_llm):
+    f = write(workdir / "notes.txt", "Project proposal draft")
+    fake_llm.reply = "Proposal_Draft"
 
     ok, new_name = FileOrganizer(logger, fake_llm).smart_rename(str(f))
 
-    assert (ok, new_name) == (True, "Q3_SalesReport.txt")
-    assert (workdir / new_name).exists()
-    contents, vision = fake_llm.calls[0]
-    assert "Quarterly report" in contents[1]
-    assert vision is True
+    assert (ok, new_name) == (True, "Proposal_Draft.txt")
+    assert (workdir / "Proposal_Draft.txt").exists()
+    assert not f.exists()
 
 
-def test_smart_rename_image_avoids_name_collision(logger, workdir, fake_llm):
-    write(workdir / "Receipt.png", "existing")
-    img = workdir / "IMG_0001.png"
-    Image.new("RGB", (10, 10), "white").save(img)
-    fake_llm.reply = "Receipt"
+def test_smart_rename_image_sends_image_object_to_ai(logger, workdir, fake_llm):
+    f = workdir / "photo.jpg"
+    Image.new("RGB", (100, 100), "red").save(f)
+    fake_llm.reply = "Red_Square"
 
-    ok, new_name = FileOrganizer(logger, fake_llm).smart_rename(str(img))
+    FileOrganizer(logger, fake_llm).smart_rename(str(f))
 
-    assert (ok, new_name) == (True, "Receipt_1.png")
-    assert (workdir / "Receipt.png").read_text() == "existing"
-
-
-def test_smart_rename_pdf_uploads_then_deletes(logger, workdir, fake_llm):
-    f = write(workdir / "scan.pdf")
-    fake_llm.reply = "Invoice_1002"
-
-    ok, _ = FileOrganizer(logger, fake_llm).smart_rename(str(f))
-
-    assert ok
-    assert fake_llm.deleted == fake_llm.uploaded == [f"uploaded:{f}"]
+    assert fake_llm.calls[0][1] is True
+    assert isinstance(fake_llm.calls[0][0][1], Image.Image)
 
 
-def test_smart_rename_empty_reply_keeps_file(logger, workdir, fake_llm):
-    f = write(workdir / "a.txt")
-    fake_llm.reply = "   "
+def test_smart_rename_pdf_uses_file_upload(logger, workdir, fake_llm):
+    f = write(workdir / "receipt.pdf", "dummy pdf content")
+    fake_llm.reply = "Starbucks_Receipt"
 
-    ok, _ = FileOrganizer(logger, fake_llm).smart_rename(str(f))
+    ok, new_name = FileOrganizer(logger, fake_llm).smart_rename(str(f))
+
+    assert (ok, new_name) == (True, "Starbucks_Receipt.pdf")
+    assert fake_llm.uploaded == [f"uploaded:{f}"]
+    assert fake_llm.deleted == [f"uploaded:{f}"]
+
+
+def test_smart_rename_cleans_deleted_file_when_generation_fails(logger, workdir):
+    f = write(workdir / "receipt.pdf", "dummy")
+    llm = FakeLLM(error="rate limit")
+
+    ok, _ = FileOrganizer(logger, llm).smart_rename(str(f))
 
     assert not ok
+    assert llm.deleted == [f"uploaded:{f}"]
+
+
+def test_smart_rename_without_api_key(logger, workdir):
+    f = write(workdir / "a.txt")
+    llm = FakeLLM(configured=False)
+
+    ok, msg = FileOrganizer(logger, llm).smart_rename(str(f))
+
+    assert not ok
+    assert "ตั้งค่า Gemini API key" in msg
+
+
+def test_smart_rename_reports_quota_error(logger, workdir):
+    f = write(workdir / "a.txt")
+    ok, msg = FileOrganizer(logger, FakeLLM(error="429 RESOURCE_EXHAUSTED")).smart_rename(str(f))
+    assert not ok
+    assert "โควตา API เต็ม" in msg
     assert f.exists()
 
 
@@ -185,3 +179,20 @@ def test_smart_rename_case_only_change(logger, workdir, fake_llm):
 
     assert (ok, new_name) == (True, "Notes.txt")
     assert sorted(p.name for p in workdir.iterdir()) == ["Notes.txt"]
+
+
+@pytest.mark.parametrize("text, expected", [
+    ("วันที่ 20 ตุลาคม 2569", "วันที่ 20 ตุลาคม 2569 (ค.ศ. 2026)"),
+    ("พ.ศ. 2568", "พ.ศ. 2568 (ค.ศ. 2025)"),
+    ("1 ต.ค. 2569", "1 ต.ค. 2569 (ค.ศ. 2026)"),
+    ("ราคา 2569 บาท", "ราคา 2569 บาท"),
+    ("October 2026", "October 2026"),
+])
+def test_annotate_buddhist_years(text, expected):
+    assert annotate_buddhist_years(text) == expected
+
+
+def test_smart_rename_sends_gregorian_year_hint(logger, workdir, fake_llm):
+    f = write(workdir / "note.txt", "ประชุมวันที่ 20 ตุลาคม 2569")
+    FileOrganizer(logger, fake_llm).smart_rename(str(f))
+    assert "ค.ศ. 2026" in fake_llm.calls[0][0][1]

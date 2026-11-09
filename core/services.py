@@ -1,6 +1,7 @@
 """Composition root: builds every service once and wires their dependencies."""
 from dataclasses import dataclass
 
+from core.ai_assistant import AIAssistant
 from core.cleaner import StorageCleaner
 from core.config import ConfigManager
 from core.converter import FileConverter
@@ -24,6 +25,7 @@ class AppServices:
     converter: FileConverter
     analyzer: StorageAnalyzer
     watcher: WatcherManager
+    assistant: AIAssistant
 
     @property
     def gemini(self):
@@ -57,4 +59,5 @@ def build_services(config_path=None, log_txt=None, log_json=None):
         converter=FileConverter(logger),
         analyzer=StorageAnalyzer(),
         watcher=WatcherManager(logger, exclusion),
+        assistant=AIAssistant(llm),
     )

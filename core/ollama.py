@@ -110,6 +110,35 @@ class OllamaClient:
     def delete_file(self, handle):
         pass
 
+    # ---------- Server and model management (used by Settings) ----------
+
+    def server_version(self):
+        """Ollama's version string, or None if no server answers at base_url."""
+        try:
+            return self._request("/api/version", timeout=STATUS_TIMEOUT).get("version", "?")
+        except AIServiceError:
+            return None
+
+    def installed_models(self):
+        reply = self._request("/api/tags", timeout=STATUS_TIMEOUT)
+        return sorted(m["name"] for m in reply.get("models", []))
+
+    def pull_model(self, name, on_progress=None):
+        """Download a model through Ollama. on_progress(status, completed_bytes, total_bytes) is called as it goes."""
+        request = self._build_request("/api/pull", {"model": name, "stream": True})
+        try:
+            with urllib.request.urlopen(request, timeout=GENERATE_TIMEOUT) as response:
+                for line in response:
+                    if not line.strip():
+                        continue
+                    event = json.loads(line)
+                    if "error" in event:
+                        raise AIServiceError(event["error"])
+                    if on_progress:
+                        on_progress(event.get("status", ""), event.get("completed", 0), event.get("total", 0))
+        except (urllib.error.URLError, OSError, json.JSONDecodeError) as e:
+            raise AIServiceError(f"ดาวน์โหลดโมเดลไม่สำเร็จ: {e}") from e
+
     # ---------- HTTP helpers ----------
 
     @staticmethod

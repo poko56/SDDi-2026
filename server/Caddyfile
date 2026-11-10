@@ -1,0 +1,6 @@
+185-84-160-168.sslip.io {
+	request_body {
+		max_size 21MB
+	}
+	reverse_proxy 127.0.0.1:8787
+}

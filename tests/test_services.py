@@ -10,7 +10,7 @@ from core.services import build_services
 class FakeGenaiClient:
     created = 0
 
-    def __init__(self, api_key):
+    def __init__(self, api_key, http_options=None):
         FakeGenaiClient.created += 1
         self.models = self
 
@@ -73,7 +73,14 @@ def test_services_share_one_exclusion_policy(services, tmp_path):
     assert services.config.get("excluded_folders") == [str(tmp_path / "private")]
 
 
+def test_services_default_to_zipzap_ai_without_a_key(services):
+    assert services.llm.active_name == "zipzap"
+    assert services.llm.is_configured
+    assert services.zipzap.base_url.startswith("https://")
+
+
 def test_services_share_one_llm_client(services):
+    services.set_ai_provider("gemini")
     assert not services.llm.is_configured
     services.set_api_key("new-key")
     assert services.organizer.llm is services.llm

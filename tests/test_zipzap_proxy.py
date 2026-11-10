@@ -18,6 +18,7 @@ GEN_PATH = "/v1beta/models/gemini-flash-lite-latest:generateContent"
 
 class FakeGemini(BaseHTTPRequestHandler):
     requests = []
+    reject_key = False
 
     def log_message(self, *args):
         pass
@@ -26,9 +27,15 @@ class FakeGemini(BaseHTTPRequestHandler):
         body = self.rfile.read(int(self.headers["Content-Length"]))
         FakeGemini.requests.append({"path": self.path, "key": self.headers.get("x-goog-api-key"),
                                     "body": json.loads(body)})
-        reply = json.dumps({"candidates": [{"content": {"role": "model", "parts": [{"text": "สวัสดี"}]}}]})
+        if FakeGemini.reject_key:
+            code, reply = 400, json.dumps({"error": {"code": 400, "message": "API key not valid.",
+                                                     "status": "INVALID_ARGUMENT",
+                                                     "details": [{"reason": "API_KEY_INVALID"}]}})
+        else:
+            code = 200
+            reply = json.dumps({"candidates": [{"content": {"role": "model", "parts": [{"text": "สวัสดี"}]}}]})
         data = reply.encode("utf-8")
-        self.send_response(200)
+        self.send_response(code)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
@@ -43,6 +50,7 @@ def start(server):
 @pytest.fixture
 def proxy(tmp_path):
     FakeGemini.requests = []
+    FakeGemini.reject_key = False
     upstream = start(ThreadingHTTPServer(("127.0.0.1", 0), FakeGemini))
     settings = Settings(api_key=REAL_KEY, upstream=f"http://127.0.0.1:{upstream.server_port}",
                         port=0, per_install=2, per_ip=3, total=4, trust_forwarded_for=False)
@@ -137,6 +145,13 @@ def test_client_shows_the_proxy_quota_message(proxy):
 
     with pytest.raises(AIServiceError, match="ครบ 2 ครั้ง"):
         client.generate("3")
+
+
+def test_bad_server_key_is_reported_as_a_server_problem(proxy):
+    FakeGemini.reject_key = True
+
+    with pytest.raises(AIServiceError, match="server ของ ZipZap ตั้งค่า Gemini key ไม่ถูกต้อง"):
+        ZipZapCloudClient(proxy, TOKEN).generate("hi")
 
 
 def test_client_cannot_upload_files(proxy):

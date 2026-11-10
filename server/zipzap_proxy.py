@@ -170,6 +170,11 @@ def make_handler(settings, store):
             except urllib.error.HTTPError as e:
                 code, payload = e.code, e.read()
                 print(f"upstream error {code} for {model}", flush=True)
+                if code in (400, 401, 403) and (b"API_KEY_INVALID" in payload or b"API key" in payload):
+                    # The user has no key to fix: say the team's server is misconfigured instead
+                    self._error(503, "UNAVAILABLE", "server ของ ZipZap ตั้งค่า Gemini key ไม่ถูกต้อง แจ้งทีมพัฒนา "
+                                                    "หรือใส่ Gemini API Key ของตัวเองในหน้า Settings")
+                    return
             except (urllib.error.URLError, OSError) as e:
                 print(f"upstream unreachable: {e}", flush=True)
                 self._error(502, "UNAVAILABLE", "ZipZap AI ติดต่อ Gemini ไม่ได้ชั่วคราว ลองใหม่อีกครั้ง")

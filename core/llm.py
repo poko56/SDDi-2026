@@ -120,7 +120,7 @@ class ZipZapCloudClient(GeminiClient):
             return super().generate(contents, vision)
         except AIServiceError as e:
             cause = e.__cause__
-            if isinstance(cause, genai_errors.APIError) and cause.code in (401, 413, 429, 502) and cause.message:
+            if isinstance(cause, genai_errors.APIError) and cause.code in (401, 413, 429, 502, 503) and cause.message:
                 raise AIServiceError(cause.message) from cause  # The proxy's own Thai message
             raise
 

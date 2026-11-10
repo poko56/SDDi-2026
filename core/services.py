@@ -6,7 +6,7 @@ from core.cleaner import StorageCleaner
 from core.config import ConfigManager
 from core.converter import FileConverter
 from core.exclusion import ExclusionPolicy
-from core.llm import AIRouter, GeminiClient
+from core.llm import AIRouter, GeminiClient, ZipZapCloudClient
 from core.logger import ActionLogger
 from core.ollama import DEFAULT_URL, OllamaClient
 from core.organizer import FileOrganizer
@@ -27,6 +27,10 @@ class AppServices:
     analyzer: StorageAnalyzer
     watcher: WatcherManager
     assistant: AIAssistant
+
+    @property
+    def zipzap(self):
+        return self.llm.providers["zipzap"]
 
     @property
     def gemini(self):
@@ -63,7 +67,12 @@ def build_services(config_path=None, log_txt=None, log_json=None):
         ollama = OllamaClient(config.get("ollama_url"), config.get("ollama_model"))
     except ValueError:
         ollama = OllamaClient(DEFAULT_URL, config.get("ollama_model"))
-    llm = AIRouter([GeminiClient(config.resolve_api_key()), ollama], config.get("ai_provider"))
+    gemini = GeminiClient(config.resolve_api_key())
+    zipzap = ZipZapCloudClient(config.proxy_url(), config.install_id())
+    provider = config.get("ai_provider")
+    if provider == "gemini" and not gemini.is_configured:
+        provider = "zipzap"  # Older configs saved "gemini" as the default even with no key
+    llm = AIRouter([zipzap, gemini, ollama], provider)
     return AppServices(
         config=config,
         logger=logger,

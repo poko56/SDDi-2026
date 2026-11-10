@@ -73,9 +73,9 @@ def test_services_share_one_exclusion_policy(services, tmp_path):
     assert services.config.get("excluded_folders") == [str(tmp_path / "private")]
 
 
-def test_services_default_to_zipzap_ai_without_a_key(services):
+def test_services_default_to_zipzap_ai_waiting_for_google_login(services):
     assert services.llm.active_name == "zipzap"
-    assert services.llm.is_configured
+    assert not services.llm.is_configured
     assert services.zipzap.base_url.startswith("https://")
 
 

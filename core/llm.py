@@ -17,6 +17,7 @@ from google.genai import types as genai_types
 
 CHAT_MODEL = "gemini-flash-lite-latest"
 VISION_MODEL = "gemini-3.6-flash"
+API_VERSION = "v1beta"  # The "-latest" model aliases are not served on the SDK's default v1
 
 
 class AIServiceError(Exception):
@@ -59,7 +60,8 @@ class GeminiClient:
         return self._client
 
     def _new_client(self):
-        return genai.Client(api_key=self._api_key)
+        return genai.Client(api_key=self._api_key,
+                            http_options=genai_types.HttpOptions(api_version=API_VERSION))
 
     def generate(self, contents, vision=False):
         """Send a prompt (text, PIL images or uploaded files) and return the reply text."""
@@ -113,7 +115,8 @@ class ZipZapCloudClient(GeminiClient):
         return "Gemini ผ่าน server ของทีม ZipZap (ไม่ต้องใช้ API key)"
 
     def _new_client(self):
-        return genai.Client(api_key=self._api_key, http_options=genai_types.HttpOptions(base_url=self.base_url))
+        return genai.Client(api_key=self._api_key, http_options=genai_types.HttpOptions(
+            base_url=self.base_url, api_version=API_VERSION))
 
     def generate(self, contents, vision=False):
         try:

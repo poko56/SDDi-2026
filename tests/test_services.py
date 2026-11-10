@@ -10,7 +10,7 @@ from core.services import build_services
 class FakeGenaiClient:
     created = 0
 
-    def __init__(self, api_key):
+    def __init__(self, api_key, http_options=None):
         FakeGenaiClient.created += 1
         self.models = self
 

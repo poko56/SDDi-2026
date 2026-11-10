@@ -1,14 +1,11 @@
 import json
 import os
-import re
-import uuid
 
 from core.paths import is_frozen, resource_path
 
 API_KEY_ENV_VAR = "GEMINI_API_KEY"
 PROXY_URL_ENV_VAR = "ZIPZAP_PROXY_URL"
 DEFAULT_PROXY_URL = "https://185-84-160-168.sslip.io"
-_INSTALL_ID_RE = re.compile(r"zz-[0-9a-f]{32}")
 
 
 class ConfigManager:
@@ -17,7 +14,8 @@ class ConfigManager:
     DEFAULTS = {
         "theme": "Light",
         "ai_provider": "zipzap",
-        "install_id": "",
+        "zipzap_session": "",
+        "zipzap_email": "",
         "gemini_api_key": "",
         "ollama_url": "http://localhost:11434",
         "ollama_model": "",
@@ -55,14 +53,6 @@ class ConfigManager:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(self._data, f, ensure_ascii=False, indent=4)
         os.replace(tmp_path, self.path)
-
-    def install_id(self):
-        """Random id this install sends to the ZipZap AI server, which counts daily uses per id."""
-        value = self.get("install_id") or ""
-        if not _INSTALL_ID_RE.fullmatch(value):
-            value = "zz-" + uuid.uuid4().hex
-            self.set("install_id", value)
-        return value
 
     @staticmethod
     def proxy_url():

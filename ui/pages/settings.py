@@ -13,7 +13,8 @@ from ui.widgets import card
 APP_VERSION = "1.2.0"
 OLLAMA_DOWNLOAD_URL = "https://ollama.com/download"
 WARNING_COLOR = ("#B45309", "#FBBF24")
-PROVIDER_LABELS = {"gemini": "Gemini (Cloud)", "ollama": "Local AI (Ollama)"}
+PROVIDER_LABELS = {"zipzap": "ZipZap AI (ไม่ต้องใช้ key)", "gemini": "Gemini (key ของตัวเอง)",
+                   "ollama": "Local AI (Ollama)"}
 
 
 class SettingsPage(BasePage):
@@ -75,9 +76,26 @@ class SettingsPage(BasePage):
             text, color = "🔒 ประมวลผลบนเครื่องนี้ รายชื่อไฟล์และเนื้อหาไฟล์ไม่ออกจากเครื่อง", ACCENT_SUCCESS
         elif llm.active_name == "ollama":
             text, color = f"🌐 ส่งข้อมูลไปที่ Ollama server {llm.base_url} (นอกเครื่องนี้)", WARNING_COLOR
+        elif llm.active_name == "zipzap":
+            text, color = ("☁️ ส่งไปประมวลผลที่ Google ผ่าน server ของทีม ZipZap — ไม่ต้องใช้ key\n"
+                           "กำลังตรวจโควตาวันนี้..."), TEXT_MUTED
+            self.app.run_background(self.services.zipzap.usage, on_done=self._show_zipzap_usage)
         else:
             text, color = "☁️ รายชื่อไฟล์และเนื้อหาไฟล์ที่ให้ AI อ่านจะถูกส่งไปประมวลผลที่ Google", TEXT_MUTED
         self.lbl_privacy.configure(text=text, text_color=color)
+
+    def _show_zipzap_usage(self, usage):
+        if self.services.llm.active_name != "zipzap":
+            return
+        if usage is None:
+            quota = "⚠️ ติดต่อ server ของ ZipZap ไม่ได้ ตรวจอินเทอร์เน็ต หรือใช้ Gemini key ของตัวเอง"
+            color = WARNING_COLOR
+        elif usage.get("remaining", 0) <= 0:
+            quota, color = f"⚠️ ใช้ครบ {usage['limit']} ครั้งของวันนี้แล้ว ใช้ได้อีกครั้งหลังเที่ยงคืน", WARNING_COLOR
+        else:
+            quota, color = f"วันนี้ใช้ไป {usage['used']}/{usage['limit']} ครั้ง", TEXT_MUTED
+        self.lbl_privacy.configure(
+            text=f"☁️ ส่งไปประมวลผลที่ Google ผ่าน server ของทีม ZipZap — ไม่ต้องใช้ key\n{quota}", text_color=color)
 
     # ---------- Gemini ----------
 

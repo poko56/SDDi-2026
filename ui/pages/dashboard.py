@@ -178,8 +178,7 @@ class DashboardPage(BasePage):
 
     def _smart_rename(self):
         if not self.services.llm.is_configured:
-            messagebox.showwarning("Smart Rename", "กรุณาตั้งค่า AI ในหน้า Settings ก่อนใช้งานครับ\n"
-                                                   "(ใส่ Gemini API Key หรือเลือกโมเดล Local AI)")
+            messagebox.showwarning("Smart Rename", self.services.llm.not_configured_message)
             self.app.show_page("settings")
             return
         files = filedialog.askopenfilenames(filetypes=RENAME_FILETYPES)

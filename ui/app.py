@@ -181,11 +181,20 @@ class ZipZapApp(ctk.CTk):
             btn.icons = (create_icon_image(icon, ACCENT_PRIMARY), create_icon_image(icon, TEXT_MUTED))
             self._nav_buttons[key] = btn
 
-        self.switch_theme = ctk.CTkSwitch(sidebar, text="Dark Mode", command=self._toggle_theme,
+        footer = ctk.CTkFrame(sidebar, fg_color="transparent")
+        footer.grid(row=len(self.PAGES) + 2, column=0, padx=15, pady=(10, 18), sticky="ew")
+        self.switch_theme = ctk.CTkSwitch(footer, text="Dark Mode", command=self._toggle_theme,
                                           progress_color=ACCENT_PRIMARY)
-        self.switch_theme.grid(row=len(self.PAGES) + 2, column=0, padx=20, pady=20, sticky="w")
+        self.switch_theme.pack(side="left", padx=(5, 0))
         if self.services.config.get("theme") == "Dark":
             self.switch_theme.select()
+
+        self.btn_account = ctk.CTkButton(footer, text="", command=self._account_action, width=96, height=30,
+                                         corner_radius=15, font=font(12, "bold"), fg_color=ACCENT_SOFT,
+                                         text_color=ACCENT_PRIMARY, hover_color=BG_MAIN,
+                                         image=create_icon_image(Icons.PERSON, ACCENT_PRIMARY, 16), anchor="w")
+        self.btn_account.pack(side="right")
+        self.refresh_account_chip()
 
     def _build_content_area(self):
         main = ctk.CTkFrame(self, fg_color=BG_MAIN, corner_radius=0)
@@ -214,6 +223,21 @@ class ZipZapApp(ctk.CTk):
         self.lbl_page_title.configure(text=page.title)
         page.pack(fill="both", expand=True, padx=30, pady=20)
         page.on_show()
+
+    def refresh_account_chip(self):
+        """Mirror the Google sign-in state next to the Dark Mode switch. Safe to call from Settings."""
+        if self.services.zipzap.session:
+            email = self.services.config.get("zipzap_email") or "บัญชี Google"
+            name = email.split("@")[0]
+            label = name if len(name) <= 10 else name[:9] + "…"
+            self.btn_account.configure(text=f"  {label}")
+        else:
+            self.btn_account.configure(text="  Login")
+
+    def _account_action(self):
+        """The chip is a shortcut to the ZipZap AI account controls in Settings."""
+        self.show_page("settings")
+        self.pages["settings"]._toggle_login()
 
     def _toggle_theme(self):
         theme = "Dark" if self.switch_theme.get() == 1 else "Light"

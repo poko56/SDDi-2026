@@ -52,9 +52,11 @@ class GeminiClient:
         self._api_key = (api_key or "").strip()
         self._client = None  # Created lazily and reused across calls
 
+    not_configured_message = "ยังไม่ได้ใส่ Gemini API Key ในหน้า Settings"
+
     def _get_client(self):
         if not self._api_key:
-            raise AINotConfiguredError("ยังไม่ได้ใส่ Gemini API Key ในหน้า Settings")
+            raise AINotConfiguredError(self.not_configured_message)
         if self._client is None:
             self._client = self._new_client()
         return self._client
@@ -93,18 +95,26 @@ class GeminiClient:
 class ZipZapCloudClient(GeminiClient):
     """Gemini through the team's proxy server (server/zipzap_proxy.py).
 
-    The real API key stays on the server; this client sends a random install id
-    instead, and the server limits how many requests each install may make per day.
+    The real API key stays on the server. This client sends the session token the server
+    issued at Google sign-in, and the server limits requests per Google account per day.
     """
 
     name = "zipzap"
     label = "ZipZap AI"
     supports_file_upload = False  # The proxy only forwards generateContent; PDFs are sent as text or page images
+    not_configured_message = "กรุณา login ด้วย Google ในหน้า Settings ก่อนใช้ ZipZap AI"
     USAGE_TIMEOUT = 5
 
-    def __init__(self, base_url, install_id):
+    def __init__(self, base_url, session=""):
         self.base_url = (base_url or "").strip().rstrip("/")
-        super().__init__(install_id)
+        super().__init__(session)
+
+    @property
+    def session(self):
+        return self._api_key
+
+    def set_session(self, session):
+        self.set_api_key(session)
 
     @property
     def is_configured(self):
@@ -134,11 +144,19 @@ class ZipZapCloudClient(GeminiClient):
         pass
 
     def usage(self):
-        """Today's {"used", "limit", "remaining"} for this install, or None if the server cannot be reached."""
+        """Today's {"used", "limit", "remaining", "email"} for the signed-in account.
+
+        Returns {"expired": True} when the server no longer accepts the session, and None
+        when it cannot be reached or nobody is signed in.
+        """
+        if not self._api_key:
+            return None
         request = urllib.request.Request(f"{self.base_url}/v1/usage", headers={"x-goog-api-key": self._api_key})
         try:
             with urllib.request.urlopen(request, timeout=self.USAGE_TIMEOUT) as response:
                 return json.loads(response.read())
+        except urllib.error.HTTPError as e:
+            return {"expired": True} if e.code == 401 else None
         except (urllib.error.URLError, OSError, ValueError):
             return None
 

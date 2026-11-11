@@ -29,6 +29,7 @@ _UNSAFE_FILENAME_CHARS = re.compile(r"[<>:\"/\\|?*`'\x00-\x1f]")
 MAX_NAME_LENGTH = 120
 MAX_TEXT_CHARS = 5000
 PDF_TEXT_PAGES = 3
+# Fallback only; when a provider is present its own message (login / API key / model) is used instead.
 NOT_CONFIGURED_MESSAGE = "กรุณาตั้งค่า AI ในหน้า Settings ก่อน (ใส่ Gemini API Key หรือเลือกโมเดล Local AI)"
 
 
@@ -161,10 +162,13 @@ class FileOrganizer:
                 text = f.read(MAX_TEXT_CHARS)
         return [RENAME_PROMPT, f"File content:\n{annotate_buddhist_years(text)}"], None
 
+    def _not_configured_message(self):
+        return self.llm.not_configured_message if self.llm is not None else NOT_CONFIGURED_MESSAGE
+
     def smart_rename(self, file_path):
         """Ask the AI for a meaningful name and rename the file. Returns (ok, new_name_or_error)."""
         if self.llm is None or not self.llm.is_configured:
-            return False, NOT_CONFIGURED_MESSAGE
+            return False, self._not_configured_message()
         ext = extension_of(file_path)
         if ext not in RENAMEABLE_EXTENSIONS:
             return False, f"ฟังก์ชันนี้ยังไม่รองรับไฟล์นามสกุล {ext}"
@@ -174,7 +178,7 @@ class FileOrganizer:
             contents, uploaded = self._build_rename_prompt(file_path, ext)
             suggestion = self.llm.generate(contents, vision=True)
         except AINotConfiguredError:
-            return False, NOT_CONFIGURED_MESSAGE
+            return False, self._not_configured_message()
         except AIServiceError as e:
             if "INVALID_ARGUMENT" in str(e):
                 return False, ("ไฟล์นี้อาจเป็นไฟล์จำลอง (Fake file) หรือไฟล์เสียหาย "

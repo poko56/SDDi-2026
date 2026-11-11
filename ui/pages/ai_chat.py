@@ -41,7 +41,7 @@ class AIChatPage(BasePage):
     def on_show(self):
         llm = self.services.llm
         if not llm.is_configured:
-            text = f"⚠️ {llm.label} ยังไม่ได้ตั้งค่า — ไปที่หน้า Settings"
+            text = f"⚠️ {llm.not_configured_message}"
         elif llm.keeps_data_local:
             text = f"🔒 {llm.label}: {llm.model_description} — ประมวลผลบนเครื่องนี้"
         else:

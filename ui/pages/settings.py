@@ -13,7 +13,7 @@ from ui.widgets import card
 APP_VERSION = "1.2.0"
 OLLAMA_DOWNLOAD_URL = "https://ollama.com/download"
 WARNING_COLOR = ("#B45309", "#FBBF24")
-PROVIDER_LABELS = {"zipzap": "ZipZap AI (ไม่ต้องใช้ key)", "gemini": "Gemini (key ของตัวเอง)",
+PROVIDER_LABELS = {"zipzap": "ZipZap AI (login Google)", "gemini": "Gemini (key ของตัวเอง)",
                    "ollama": "Local AI (Ollama)"}
 
 
@@ -26,6 +26,7 @@ class SettingsPage(BasePage):
         scroll = ctk.CTkScrollableFrame(self, fg_color="transparent")
         scroll.pack(fill="both", expand=True)
         self._build_provider_card(scroll)
+        self._build_zipzap_card(scroll)
         self._build_api_card(scroll)
         self._build_local_card(scroll)
         self._build_exclusions_card(scroll)
@@ -77,25 +78,83 @@ class SettingsPage(BasePage):
         elif llm.active_name == "ollama":
             text, color = f"🌐 ส่งข้อมูลไปที่ Ollama server {llm.base_url} (นอกเครื่องนี้)", WARNING_COLOR
         elif llm.active_name == "zipzap":
-            text, color = ("☁️ ส่งไปประมวลผลที่ Google ผ่าน server ของทีม ZipZap — ไม่ต้องใช้ key\n"
-                           "กำลังตรวจโควตาวันนี้..."), TEXT_MUTED
-            self.app.run_background(self.services.zipzap.usage, on_done=self._show_zipzap_usage)
+            text, color = "☁️ ส่งไปประมวลผลที่ Google ผ่าน server ของทีม ZipZap — ไม่ต้องใช้ key", TEXT_MUTED
         else:
             text, color = "☁️ รายชื่อไฟล์และเนื้อหาไฟล์ที่ให้ AI อ่านจะถูกส่งไปประมวลผลที่ Google", TEXT_MUTED
         self.lbl_privacy.configure(text=text, text_color=color)
 
-    def _show_zipzap_usage(self, usage):
-        if self.services.llm.active_name != "zipzap":
+    # ---------- ZipZap AI (Google sign-in) ----------
+
+    def _build_zipzap_card(self, parent):
+        box = self._section(parent, "ZipZap AI",
+                            "login ด้วยบัญชี Google เพื่อใช้ AI ของทีมได้ฟรี วันละจำนวนจำกัด\n"
+                            "ZipZap ได้รับแค่อีเมลและชื่อ ไม่ได้รับรหัสผ่านหรือสิทธิ์เข้าถึงบัญชี Google")
+        row = ctk.CTkFrame(box, fg_color="transparent")
+        row.pack(fill="x", padx=20, pady=(10, 15))
+        self.lbl_account = ctk.CTkLabel(row, text="", font=font(13, "bold"), justify="left", anchor="w")
+        self.lbl_account.pack(side="left", fill="x", expand=True)
+        self.btn_login = self._small_button(row, "", self._toggle_login, primary=True, width=180)
+        self.btn_login.pack(side="right")
+        self._signing_in = False
+        self._refresh_account()
+
+    def _refresh_account(self):
+        if self.services.zipzap.session:
+            email = self.services.config.get("zipzap_email")
+            self.lbl_account.configure(text=f"✅ login แล้ว: {email}\nกำลังตรวจโควตาวันนี้...",
+                                       text_color=ACCENT_SUCCESS)
+            self.btn_login.configure(text="Logout", state="normal")
+            self.app.run_background(self.services.zipzap.usage, on_done=self._show_usage)
+        else:
+            self.lbl_account.configure(text="ยังไม่ได้ login", text_color=TEXT_MUTED)
+            self.btn_login.configure(text="Login ด้วย Google", state="normal")
+        self.app.refresh_account_chip()
+
+    def _show_usage(self, usage):
+        if not self.services.zipzap.session or self._signing_in:
             return
+        if usage is not None and usage.get("expired"):
+            expired = "⚠️ login ZipZap AI หมดอายุ กรุณา login ใหม่"
+            self.app.run_background(self.services.sign_out, on_done=lambda _: self._after_auth_change(expired))
+            return
+        email = self.services.config.get("zipzap_email")
         if usage is None:
-            quota = "⚠️ ติดต่อ server ของ ZipZap ไม่ได้ ตรวจอินเทอร์เน็ต หรือใช้ Gemini key ของตัวเอง"
-            color = WARNING_COLOR
+            quota, color = "⚠️ ติดต่อ server ของ ZipZap ไม่ได้ ตรวจอินเทอร์เน็ต", WARNING_COLOR
         elif usage.get("remaining", 0) <= 0:
             quota, color = f"⚠️ ใช้ครบ {usage['limit']} ครั้งของวันนี้แล้ว ใช้ได้อีกครั้งหลังเที่ยงคืน", WARNING_COLOR
         else:
-            quota, color = f"วันนี้ใช้ไป {usage['used']}/{usage['limit']} ครั้ง", TEXT_MUTED
-        self.lbl_privacy.configure(
-            text=f"☁️ ส่งไปประมวลผลที่ Google ผ่าน server ของทีม ZipZap — ไม่ต้องใช้ key\n{quota}", text_color=color)
+            quota, color = f"วันนี้ใช้ไป {usage['used']}/{usage['limit']} ครั้ง", ACCENT_SUCCESS
+        self.lbl_account.configure(text=f"✅ login แล้ว: {email}\n{quota}", text_color=color)
+
+    def _toggle_login(self):
+        if self._signing_in:
+            return
+        if self.services.zipzap.session:
+            self.btn_login.configure(state="disabled")
+            self.app.run_background(self.services.sign_out,
+                                    on_done=lambda _: self._after_auth_change("👋 logout ZipZap AI แล้ว"))
+            return
+        self._signing_in = True
+        self.btn_login.configure(text="รอ login ใน browser...", state="disabled")
+        self.lbl_account.configure(text="เปิด browser ให้เลือกบัญชี Google แล้ว\nlogin เสร็จแล้วกลับมาที่หน้านี้",
+                                   text_color=TEXT_MUTED)
+        self.app.run_background(self.services.sign_in_with_google,
+                                on_done=self._on_signed_in, on_error=self._on_sign_in_failed)
+
+    def _on_signed_in(self, result):
+        self._signing_in = False
+        self._after_auth_change(f"🔐 login ZipZap AI ด้วย {result.get('email', '')}")
+
+    def _on_sign_in_failed(self, error):
+        self._signing_in = False
+        self._refresh_account()
+        self.lbl_account.configure(text=f"⚠️ {error}", text_color=WARNING_COLOR)
+
+    def _after_auth_change(self, log_message):
+        self.app.log(log_message)
+        self._refresh_account()
+        self._refresh_privacy_label()
+        self._refresh_about()
 
     # ---------- Gemini ----------
 

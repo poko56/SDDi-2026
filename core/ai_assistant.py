@@ -6,6 +6,7 @@ from core.llm import AINotConfiguredError, AIServiceError
 from core.paths import TRASH_DIR_NAME
 
 MAX_FILES_IN_PROMPT = 500
+# The exact wording depends on the active provider (login for ZipZap AI, API key for Gemini, model for Ollama).
 
 SYSTEM_PROMPT = (
     "You are a helpful File Manager AI Assistant. "
@@ -18,7 +19,6 @@ SYSTEM_PROMPT = (
     "using this format: [OPEN: relative/path/to/file.ext]. "
     "For example: '1. budget.xlsx [OPEN: budget.xlsx]'"
 )
-NOT_CONFIGURED_MESSAGE = "กรุณาตั้งค่า AI ในหน้า Settings ก่อนใช้งาน (ใส่ Gemini API Key หรือเลือกโมเดล Local AI)"
 
 
 class AIAssistant:
@@ -50,7 +50,7 @@ class AIAssistant:
 
     def ask_ai(self, folder_path, user_query):
         if not self.llm.is_configured:
-            return NOT_CONFIGURED_MESSAGE
+            return self.llm.not_configured_message
         if not folder_path or not os.path.isdir(folder_path):
             return "กรุณาเลือกโฟลเดอร์เป้าหมายในหน้า Dashboard ก่อนครับ"
 
@@ -59,6 +59,6 @@ class AIAssistant:
         try:
             return self.llm.generate(f"{prompt}\n\nUser Query: {user_query}")
         except AINotConfiguredError:
-            return NOT_CONFIGURED_MESSAGE
+            return self.llm.not_configured_message
         except AIServiceError as e:
             return f"เกิดข้อผิดพลาดในการเชื่อมต่อกับ AI: {e}"

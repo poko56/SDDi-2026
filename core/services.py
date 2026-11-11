@@ -1,6 +1,7 @@
 """Composition root: builds every service once and wires their dependencies."""
 from dataclasses import dataclass
 
+from core import google_login
 from core.ai_assistant import AIAssistant
 from core.cleaner import StorageCleaner
 from core.config import ConfigManager
@@ -40,6 +41,24 @@ class AppServices:
     def ollama(self):
         return self.llm.providers["ollama"]
 
+    def sign_in_with_google(self, open_browser=None):
+        """Blocking: opens the browser and waits for the user. Run it off the UI thread. Raises LoginError."""
+        kwargs = {"open_browser": open_browser} if open_browser else {}
+        result = google_login.sign_in(self.zipzap.base_url, **kwargs)
+        self.config.set("zipzap_session", result["session"])
+        self.config.set("zipzap_email", result.get("email", ""))
+        self.zipzap.set_session(result["session"])
+        return result
+
+    def sign_out(self):
+        """Blocking (one quick request to the server). Run it off the UI thread."""
+        session = self.zipzap.session
+        self.config.set("zipzap_session", "")
+        self.config.set("zipzap_email", "")
+        self.zipzap.set_session("")
+        if session:
+            google_login.sign_out(self.zipzap.base_url, session)
+
     def set_api_key(self, api_key):
         self.config.set("gemini_api_key", api_key.strip())
         self.gemini.set_api_key(self.config.resolve_api_key())
@@ -68,7 +87,7 @@ def build_services(config_path=None, log_txt=None, log_json=None):
     except ValueError:
         ollama = OllamaClient(DEFAULT_URL, config.get("ollama_model"))
     gemini = GeminiClient(config.resolve_api_key())
-    zipzap = ZipZapCloudClient(config.proxy_url(), config.install_id())
+    zipzap = ZipZapCloudClient(config.proxy_url(), config.get("zipzap_session"))
     provider = config.get("ai_provider")
     if provider == "gemini" and not gemini.is_configured:
         provider = "zipzap"  # Older configs saved "gemini" as the default even with no key

@@ -14,9 +14,10 @@ from ui.pages.converter import ConverterPage
 from ui.pages.dashboard import DashboardPage
 from ui.pages.monitor import MonitorPage
 from ui.pages.settings import SettingsPage
-from ui.theme import (ACCENT_PRIMARY, ACCENT_SOFT, BG_CARD, BG_MAIN, SIDEBAR_BG, TEXT_MAIN, TEXT_MUTED, Icons,
-                      create_icon_image, font)
+from ui.theme import (ACCENT_HOVER, ACCENT_PRIMARY, ACCENT_SOFT, ACCENT_SUCCESS, BG_CARD, BG_HOVER, BG_MAIN, BORDER,
+                      SIDEBAR_BG, TEXT_MAIN, TEXT_MUTED, Icons, create_icon_image, font)
 
+WARNING_COLOR = ("#B45309", "#FBBF24")
 UI_POLL_MS = 50
 PREFERRED_SIZE = (1200, 800)
 MIN_SIZE = (960, 600)
@@ -47,6 +48,7 @@ class ZipZapApp(ctk.CTk):
         self._folder_listeners = []
         self._log_listeners = []
         self._ui_queue = queue.Queue()
+        self._account_popup = None
 
         ctk.set_appearance_mode(services.config.get("theme"))
         self.title("ZipZap - Smart File Manager")
@@ -189,11 +191,9 @@ class ZipZapApp(ctk.CTk):
         if self.services.config.get("theme") == "Dark":
             self.switch_theme.select()
 
-        self.btn_account = ctk.CTkButton(footer, text="", command=self._account_action, width=96, height=30,
-                                         corner_radius=15, font=font(12, "bold"), fg_color=ACCENT_SOFT,
-                                         text_color=ACCENT_PRIMARY, hover_color=BG_MAIN,
-                                         image=create_icon_image(Icons.PERSON, ACCENT_PRIMARY, 16), anchor="w")
-        self.btn_account.pack(side="right")
+        self.btn_account = ctk.CTkButton(footer, text="", command=self._account_action, width=38, height=38,
+                                         corner_radius=19, font=font(15, "bold"))
+        self.btn_account.pack(side="right", padx=(0, 4))
         self.refresh_account_chip()
 
     def _build_content_area(self):
@@ -225,19 +225,114 @@ class ZipZapApp(ctk.CTk):
         page.on_show()
 
     def refresh_account_chip(self):
-        """Mirror the Google sign-in state next to the Dark Mode switch. Safe to call from Settings."""
+        """Render the avatar by the Dark Mode switch to match sign-in state. Safe to call from Settings."""
         if self.services.zipzap.session:
-            email = self.services.config.get("zipzap_email") or "บัญชี Google"
-            name = email.split("@")[0]
-            label = name if len(name) <= 10 else name[:9] + "…"
-            self.btn_account.configure(text=f"  {label}")
+            email = self.services.config.get("zipzap_email") or "G"
+            self.btn_account.configure(text=(email[:1].upper() or "G"), image=None,
+                                       fg_color=ACCENT_PRIMARY, text_color="#FFFFFF", hover_color=ACCENT_HOVER)
         else:
-            self.btn_account.configure(text="  Login")
+            self.btn_account.configure(text="", image=create_icon_image(Icons.PERSON, TEXT_MUTED, 18),
+                                       fg_color=BG_HOVER, hover_color=BORDER)
+        if self._account_popup is not None and self._account_popup.winfo_exists():
+            self._close_account_popup()  # Reopened fresh next time to show the new state
+
+    # ---------- Google-style account menu ----------
 
     def _account_action(self):
-        """The chip is a shortcut to the ZipZap AI account controls in Settings."""
+        if self._account_popup is not None and self._account_popup.winfo_exists():
+            self._close_account_popup()
+        else:
+            self._open_account_popup()
+
+    def _close_account_popup(self):
+        if self._account_popup is not None:
+            self.unbind_all("<Button-1>")
+            try:
+                self._account_popup.destroy()
+            except tk.TclError:
+                pass
+            self._account_popup = None
+
+    def _open_account_popup(self):
+        card = ctk.CTkFrame(self, fg_color=BG_CARD, corner_radius=16, border_width=1, border_color=BORDER, width=300)
+        card.place(x=14, rely=1.0, y=-62, anchor="sw")
+        self._account_popup = card
+        self._fill_account_popup(card)
+        # Close when the next click lands outside the card and the avatar
+        self.after(10, lambda: self.bind_all("<Button-1>", self._maybe_close_account, add="+"))
+
+    def _maybe_close_account(self, event):
+        widget = event.widget
+        while widget is not None:
+            if widget is self._account_popup or widget is self.btn_account:
+                return
+            widget = getattr(widget, "master", None)
+        self._close_account_popup()
+
+    def _fill_account_popup(self, card):
+        logged_in = bool(self.services.zipzap.session)
+        email = self.services.config.get("zipzap_email") if logged_in else ""
+        name = email.split("@")[0] if email else ""
+
+        header = ctk.CTkFrame(card, fg_color="transparent")
+        header.pack(fill="x", padx=18, pady=(18, 12))
+        circle = ctk.CTkFrame(header, width=48, height=48, corner_radius=24,
+                              fg_color=ACCENT_PRIMARY if logged_in else BG_HOVER)
+        circle.pack(side="left", padx=(0, 14))
+        circle.pack_propagate(False)
+        if logged_in:
+            ctk.CTkLabel(circle, text=name[:1].upper(), font=font(20, "bold"), text_color="#FFFFFF").pack(expand=True)
+        else:
+            ctk.CTkLabel(circle, text="", image=create_icon_image(Icons.PERSON, TEXT_MUTED, 24)).pack(expand=True)
+        info = ctk.CTkFrame(header, fg_color="transparent")
+        info.pack(side="left", fill="x", expand=True)
+        ctk.CTkLabel(info, text=(name or "ZipZap AI"), font=font(15, "bold"),
+                     text_color=TEXT_MAIN, anchor="w").pack(anchor="w")
+        ctk.CTkLabel(info, text=(email or "ยังไม่ได้ login"), font=font(12),
+                     text_color=TEXT_MUTED, anchor="w").pack(anchor="w")
+
+        ctk.CTkFrame(card, height=1, fg_color=BORDER).pack(fill="x")
+        body = ctk.CTkFrame(card, fg_color="transparent")
+        body.pack(fill="x", padx=18, pady=(12, 16))
+        if logged_in:
+            self._popup_usage = ctk.CTkLabel(body, text="กำลังตรวจโควตาวันนี้...", font=font(12, "bold"),
+                                             text_color=TEXT_MUTED, anchor="w")
+            self._popup_usage.pack(anchor="w", pady=(0, 12))
+            ctk.CTkButton(body, text="Logout", command=self._popup_logout, height=36, width=240,
+                          fg_color=BG_HOVER, hover_color=BORDER, text_color=TEXT_MAIN).pack(fill="x")
+            self.run_background(self.services.zipzap.usage, on_done=self._popup_show_usage)
+        else:
+            ctk.CTkLabel(body, text="login ด้วยบัญชี Google เพื่อใช้ AI ของทีมได้ฟรี วันละ 50 ครั้ง",
+                         font=font(12), text_color=TEXT_MUTED, wraplength=240, justify="left",
+                         anchor="w").pack(anchor="w", pady=(0, 12))
+            ctk.CTkButton(body, text="Login ด้วย Google", command=self._popup_login, height=38, width=240,
+                          fg_color=ACCENT_PRIMARY, hover_color=ACCENT_HOVER).pack(fill="x")
+
+    def _popup_show_usage(self, usage):
+        lbl = getattr(self, "_popup_usage", None)
+        if lbl is None:
+            return
+        if usage is None:
+            text, color = "⚠️ ติดต่อ server ไม่ได้", WARNING_COLOR
+        elif usage.get("expired"):
+            text, color = "⚠️ login หมดอายุ กรุณา login ใหม่", WARNING_COLOR
+        elif usage.get("remaining", 0) <= 0:
+            text, color = f"⚠️ ใช้ครบ {usage['limit']} ครั้งของวันนี้แล้ว", WARNING_COLOR
+        else:
+            text, color = f"วันนี้ใช้ไป {usage['used']}/{usage['limit']} ครั้ง", ACCENT_SUCCESS
+        try:
+            lbl.configure(text=text, text_color=color)
+        except tk.TclError:
+            pass  # The popup was closed before usage came back
+
+    def _popup_login(self):
+        self._close_account_popup()
         self.show_page("settings")
         self.pages["settings"]._toggle_login()
+
+    def _popup_logout(self):
+        self._close_account_popup()
+        self.pages["settings"]._toggle_login()  # Logs out when a session exists
 
     def _toggle_theme(self):
         theme = "Dark" if self.switch_theme.get() == 1 else "Light"

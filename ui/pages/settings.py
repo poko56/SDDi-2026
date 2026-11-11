@@ -10,7 +10,7 @@ from ui.theme import (ACCENT_DANGER, ACCENT_HOVER, ACCENT_PRIMARY, ACCENT_SUCCES
                       TEXT_MAIN, TEXT_MUTED, font)
 from ui.widgets import card
 
-APP_VERSION = "1.2.0"
+APP_VERSION = "1.2.1"
 OLLAMA_DOWNLOAD_URL = "https://ollama.com/download"
 WARNING_COLOR = ("#B45309", "#FBBF24")
 PROVIDER_LABELS = {"zipzap": "ZipZap AI (login Google)", "gemini": "Gemini (key ของตัวเอง)",

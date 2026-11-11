@@ -60,6 +60,7 @@ def validate_url(url):
 class OllamaClient:
     name = "ollama"
     label = "Local AI (Ollama)"
+    not_configured_message = "ยังไม่ได้เลือกโมเดล Local AI ในหน้า Settings"
     supports_file_upload = False
     max_prompt_files = 150  # Long prompts are slow on a laptop; keep AI Chat responsive
 
@@ -88,7 +89,7 @@ class OllamaClient:
     def generate(self, contents, vision=False):
         """Send text and PIL images to the chosen model and return its reply."""
         if not self.model:
-            raise AINotConfiguredError("ยังไม่ได้เลือกโมเดล Local AI ในหน้า Settings")
+            raise AINotConfiguredError(self.not_configured_message)
         parts = contents if isinstance(contents, list) else [contents]
         texts = [p for p in parts if isinstance(p, str)]
         images = [self._encode_image(p) for p in parts if isinstance(p, Image.Image)]

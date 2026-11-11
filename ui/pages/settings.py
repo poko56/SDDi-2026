@@ -108,6 +108,7 @@ class SettingsPage(BasePage):
         else:
             self.lbl_account.configure(text="ยังไม่ได้ login", text_color=TEXT_MUTED)
             self.btn_login.configure(text="Login ด้วย Google", state="normal")
+        self.app.refresh_account_chip()
 
     def _show_usage(self, usage):
         if not self.services.zipzap.session or self._signing_in:

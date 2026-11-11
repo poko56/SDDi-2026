@@ -34,6 +34,7 @@ class FakeLLM:
 
     label = "Fake AI"
     keeps_data_local = True
+    not_configured_message = "ยังไม่ได้ใส่ Gemini API Key ในหน้า Settings"
 
     def __init__(self, reply="fake_reply", configured=True, error=None, supports_file_upload=True,
                  max_prompt_files=500):

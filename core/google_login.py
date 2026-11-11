@@ -19,9 +19,28 @@ AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 LOGIN_TIMEOUT = 180
 REQUEST_TIMEOUT = 30
 
-DONE_PAGE = ("<!doctype html><meta charset='utf-8'><title>ZipZap</title>"
-             "<body style='font-family:sans-serif;text-align:center;padding-top:80px'>"
-             "<h2>{title}</h2><p>{body}</p></body>")
+DONE_PAGE = """<!doctype html><html lang="th"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>ZipZap</title>
+<style>
+  :root {{ color-scheme: light dark; }}
+  * {{ box-sizing: border-box; }}
+  body {{ margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    font-family: -apple-system, 'Segoe UI', 'Helvetica Neue', 'Noto Sans Thai', sans-serif;
+    background: #F3F5F9; color: #1F2937; padding: 24px; }}
+  @media (prefers-color-scheme: dark) {{ body {{ background: #0F172A; color: #F8FAFC; }}
+    .card {{ background: #1E293B !important; box-shadow: 0 20px 60px rgba(0,0,0,.5) !important; }}
+    .sub {{ color: #94A3B8 !important; }} }}
+  .card {{ background: #FFFFFF; border-radius: 20px; padding: 48px 40px; max-width: 420px; width: 100%;
+    text-align: center; box-shadow: 0 20px 60px rgba(15,23,42,.12); }}
+  .badge {{ width: 76px; height: 76px; border-radius: 50%; margin: 0 auto 24px; display: flex;
+    align-items: center; justify-content: center; font-size: 40px; background: {tint}; color: {accent}; }}
+  h2 {{ margin: 0 0 10px; font-size: 24px; font-weight: 700; }}
+  .sub {{ margin: 0; font-size: 16px; line-height: 1.6; color: #6B7280; }}
+  .brand {{ margin-top: 28px; font-size: 13px; letter-spacing: .08em; text-transform: uppercase;
+    color: {accent}; font-weight: 700; }}
+</style></head>
+<body><div class="card"><div class="badge">{icon}</div>
+<h2>{title}</h2><p class="sub">{body}</p><div class="brand">ZipZap</div></div></body></html>"""
 
 
 class LoginError(Exception):
@@ -51,9 +70,12 @@ class _CallbackHandler(BaseHTTPRequestHandler):
         params = dict(urllib.parse.parse_qsl(parsed.query))
         self.server.result = params
         ok = "code" in params
-        page = DONE_PAGE.format(
-            title="Login สำเร็จ" if ok else "Login ไม่สำเร็จ",
-            body="กลับไปที่โปรแกรม ZipZap ได้เลย ปิดหน้านี้ได้" if ok else "กลับไปที่ ZipZap แล้วลองใหม่อีกครั้ง")
+        if ok:
+            page = DONE_PAGE.format(icon="✓", accent="#10B981", tint="rgba(16,185,129,.12)",
+                                    title="Login สำเร็จ", body="กลับไปที่โปรแกรม ZipZap ได้เลย ปิดหน้านี้ได้")
+        else:
+            page = DONE_PAGE.format(icon="✕", accent="#EF4444", tint="rgba(239,68,68,.12)",
+                                    title="Login ไม่สำเร็จ", body="กลับไปที่ ZipZap แล้วลองใหม่อีกครั้ง")
         data = page.encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")

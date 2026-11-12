@@ -1,6 +1,8 @@
+import contextlib
 import datetime
 import json
 import os
+import secrets
 import shutil
 import threading
 
@@ -13,6 +15,17 @@ class ActionLogger:
         self.log_json = log_json
         # Cleaner, organizer and watcher threads may log at the same time
         self._lock = threading.Lock()
+        # Each organize / cleaner run tags its moves with one batch id so Undo reverses them all together
+        self._batch = threading.local()
+
+    @contextlib.contextmanager
+    def batch(self):
+        """Tag every log_move() inside this block with one batch id, so Undo reverses the whole run."""
+        self._batch.id = secrets.token_hex(8)
+        try:
+            yield
+        finally:
+            self._batch.id = None
 
     @staticmethod
     def get_timestamp():
@@ -50,12 +63,13 @@ class ActionLogger:
                 "timestamp": self.get_timestamp(),
                 "original_path": original_path,
                 "new_path": new_path,
+                "batch_id": getattr(self._batch, "id", None),
             })
             self._write_moves(moves)
         self.log_action("MOVE/RENAME", f"From '{original_path}' -> '{new_path}'")
 
     def undo_last_action(self):
-        """Move the most recently moved/renamed file back to where it was."""
+        """Reverse the last batch of moves (every file of one organize or cleaner run at once)."""
         with self._lock:
             if not os.path.exists(self.log_json):
                 return False, "ไม่พบประวัติการทำงานใดๆ"
@@ -63,19 +77,39 @@ class ActionLogger:
             if not moves:
                 return False, "ไม่มีประวัติให้ย้อนกลับแล้ว"
 
-            last = moves.pop()
-            original_path, new_path = last["original_path"], last["new_path"]
-            try:
-                if not os.path.exists(new_path):
-                    self._write_moves(moves)
-                    return False, f"หาไฟล์ {new_path} ไม่พบ ไม่สามารถย้อนกลับได้"
-                if os.path.exists(original_path):
-                    return False, f"มีไฟล์ชื่อ {os.path.basename(original_path)} อยู่ที่เดิมแล้ว"
-                os.makedirs(os.path.dirname(original_path), exist_ok=True)
-                shutil.move(new_path, original_path)
-                self._write_moves(moves)
-            except OSError as e:
-                return False, f"เกิดข้อผิดพลาดในการย้อนกลับ: {e}"
+            last_batch = moves[-1].get("batch_id")
+            if last_batch:
+                i = len(moves) - 1
+                while i >= 0 and moves[i].get("batch_id") == last_batch:
+                    i -= 1
+                batch = moves[i + 1:]
+                remaining = moves[:i + 1]
+            else:
+                batch = [moves[-1]]
+                remaining = moves[:-1]
 
-        self.log_action("UNDO", f"Reverted '{new_path}' -> '{original_path}'")
-        return True, f"ย้อนกลับสำเร็จ ไฟล์กลับไปที่ {original_path}"
+            reverted = 0
+            skipped = []
+            for entry in reversed(batch):  # Undo in reverse order of the moves
+                original_path, new_path = entry["original_path"], entry["new_path"]
+                try:
+                    if not os.path.exists(new_path):
+                        skipped.append(f"หาไฟล์ {os.path.basename(new_path)} ไม่พบ")
+                        continue
+                    if os.path.exists(original_path):
+                        skipped.append(f"มีไฟล์ชื่อ {os.path.basename(original_path)} อยู่ที่เดิมแล้ว")
+                        continue
+                    os.makedirs(os.path.dirname(original_path), exist_ok=True)
+                    shutil.move(new_path, original_path)
+                    reverted += 1
+                except OSError as e:
+                    skipped.append(f"{os.path.basename(new_path)}: {e}")
+            self._write_moves(remaining)
+
+        self.log_action("UNDO", f"Reverted {reverted}/{len(batch)} files from the last batch")
+        if reverted == 0:
+            return False, "ย้อนกลับไม่ได้: " + (skipped[0] if skipped else "ไม่พบไฟล์")
+        message = f"ย้อนกลับ {reverted} ไฟล์เรียบร้อย"
+        if skipped:
+            message += f" ({len(skipped)} ไฟล์ข้ามไป)"
+        return True, message

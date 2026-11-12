@@ -46,17 +46,26 @@ def test_docx_in_convert_folder_triggers_pdf(logger, workdir):
     assert calls == {"sort": [], "pdf": [str(f)]}
 
 
-def test_ignores_empty_missing_hidden_and_excluded_files(logger, workdir):
-    empty = workdir / "empty.txt"
-    empty.write_text("")
+def test_ignores_missing_hidden_and_excluded_files(logger, workdir):
     hidden = write(workdir / ".DS_Store")
     private = write(workdir / "private.txt")
     handler, calls = make_handler(workdir, logger, excluded=[str(private)])
 
-    for path in (empty, hidden, workdir / "ghost.txt", private):
+    for path in (hidden, workdir / "ghost.txt", private):
         handler.process_file(str(path))
 
     assert calls == {"sort": [], "pdf": []}
+
+
+def test_empty_files_are_still_sorted(logger, workdir):
+    """A legitimate 0-byte file must be sorted once the settle timer has fired."""
+    empty = workdir / "empty.mp4"
+    empty.write_text("")
+    handler, calls = make_handler(workdir, logger)
+
+    handler.process_file(str(empty))
+
+    assert calls == {"sort": [str(empty)], "pdf": []}
 
 
 def test_burst_of_events_is_handled_once(logger, workdir):

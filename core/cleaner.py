@@ -88,7 +88,9 @@ class StorageCleaner:
                 else:
                     groups = [candidates]  # The quick hash already covered the whole file
                 for group in groups:
-                    original = min(group, key=lambda p: (p.count(os.sep), p))
+                    # Prefer the one with the shortest basename (so "a.txt" beats "a (1).txt" and "a_copy.txt"),
+                    # then the shallowest path, then alphabetical — a stable rule users can predict.
+                    original = min(group, key=lambda p: (len(os.path.basename(p)), p.count(os.sep), p))
                     results.extend(
                         ScanResult(p, size, "duplicate", original) for p in group if p != original
                     )
@@ -125,22 +127,24 @@ class StorageCleaner:
         trash_root = os.path.join(root_folder, TRASH_DIR_NAME)
         moved_bytes = 0
         moved_count = 0
-        for path in file_paths:
-            try:
-                size = os.path.getsize(path)
-                rel_path = os.path.relpath(path, root_folder)
-                if rel_path.startswith(".."):
-                    rel_path = os.path.basename(path)
-                trash_path = unique_path(os.path.join(trash_root, rel_path))
-                os.makedirs(os.path.dirname(trash_path), exist_ok=True)
-                shutil.move(path, trash_path)
-            except (OSError, ValueError) as e:
-                if os.path.exists(path):
-                    self.logger.log_action("ERROR", f"Failed to move {path} to trash: {e}")
-                continue
-            self.logger.log_move(path, trash_path)
-            moved_bytes += size
-            moved_count += 1
+        # Tag every move with one batch id so Undo restores the whole clean-up in one click
+        with self.logger.batch():
+            for path in file_paths:
+                try:
+                    size = os.path.getsize(path)
+                    rel_path = os.path.relpath(path, root_folder)
+                    if rel_path.startswith(".."):
+                        rel_path = os.path.basename(path)
+                    trash_path = unique_path(os.path.join(trash_root, rel_path))
+                    os.makedirs(os.path.dirname(trash_path), exist_ok=True)
+                    shutil.move(path, trash_path)
+                except (OSError, ValueError) as e:
+                    if os.path.exists(path):
+                        self.logger.log_action("ERROR", f"Failed to move {path} to trash: {e}")
+                    continue
+                self.logger.log_move(path, trash_path)
+                moved_bytes += size
+                moved_count += 1
 
         self.logger.log_action("CLEAN_UP", f"Moved {moved_count} files ({moved_bytes} bytes) to {trash_root}")
         return moved_count, moved_bytes

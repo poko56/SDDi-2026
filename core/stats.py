@@ -25,11 +25,13 @@ class StorageStats:
 class StorageAnalyzer:
     """Adds up how much space each kind of file uses in a folder."""
 
-    def analyze(self, folder_path):
+    def analyze(self, folder_path, on_progress=None):
+        """`on_progress(count)` is called periodically with the running file count, so the UI can show it."""
         stats = StorageStats()
         if not os.path.isdir(folder_path):
             return stats
         stack = [folder_path]
+        next_report = 100
         while stack:
             try:
                 with os.scandir(stack.pop()) as entries:
@@ -39,6 +41,9 @@ class StorageAnalyzer:
                                 stack.append(entry.path)
                         elif entry.is_file(follow_symlinks=False):
                             self._add(stats, entry)
+                            if on_progress is not None and stats.file_count >= next_report:
+                                on_progress(stats.file_count)
+                                next_report += 200  # Report every ~200 files
             except OSError:
                 continue
         try:

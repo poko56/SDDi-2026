@@ -51,12 +51,9 @@ class SmartFileHandler(FileSystemEventHandler):
             self._timers.clear()
 
     def process_file(self, file_path):
+        # The settle timer (SETTLE_SECONDS) already waits for any in-progress write to end, so a
+        # file that is still 0 bytes here is a real empty file and should be sorted like any other.
         if self.exclusion.is_excluded(file_path) or not os.path.isfile(file_path):
-            return
-        try:
-            if os.path.getsize(file_path) == 0:
-                return
-        except OSError:
             return
 
         parent = os.path.dirname(os.path.abspath(file_path))

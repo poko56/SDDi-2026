@@ -6,13 +6,16 @@ import customtkinter as ctk
 from core.ollama import RECOMMENDED_MODELS, recommend_model
 from core.system_info import total_memory_gb
 from ui.pages.base import BasePage
-from ui.theme import (ACCENT_DANGER, ACCENT_HOVER, ACCENT_PRIMARY, ACCENT_SUCCESS, BG_HOVER, BG_SUBTLE, BORDER,
-                      TEXT_MAIN, TEXT_MUTED, font)
+from ui.theme import (ACCENT_DANGER, ACCENT_HOVER, ACCENT_PRIMARY, ACCENT_SOFT, ACCENT_SUCCESS, BG_HOVER, BG_SUBTLE,
+                      BORDER, TEXT_MAIN, TEXT_MUTED, Icons, create_icon_image, font)
 from ui.widgets import card
 
-APP_VERSION = "1.2.1"
+APP_VERSION = "1.2.2"
 OLLAMA_DOWNLOAD_URL = "https://ollama.com/download"
 WARNING_COLOR = ("#B45309", "#FBBF24")
+SUCCESS_SOFT = ("#D1FAE5", "#064E3B")
+WARNING_SOFT = ("#FEF3C7", "#78350F")
+DANGER_SOFT = ("#FEE2E2", "#7F1D1D")
 PROVIDER_LABELS = {"zipzap": "ZipZap AI (login Google)", "gemini": "Gemini (key ของตัวเอง)",
                    "ollama": "Local AI (Ollama)"}
 
@@ -23,6 +26,7 @@ class SettingsPage(BasePage):
     def build(self):
         self._installed_models = []
         self._downloading = False
+        self._status_pills = {}
         scroll = ctk.CTkScrollableFrame(self, fg_color="transparent")
         scroll.pack(fill="both", expand=True)
         self._build_provider_card(scroll)
@@ -34,15 +38,42 @@ class SettingsPage(BasePage):
 
     def on_show(self):
         self._refresh_local_status()
+        self._refresh_account()  # Re-fetch today's ZipZap AI usage after the user chatted elsewhere
 
-    def _section(self, parent, title, subtitle):
+    def _section(self, parent, title, subtitle, icon=None, icon_color=ACCENT_PRIMARY, key=None):
+        """Card with an icon badge + title + subtitle header and a divider under it."""
         box = card(parent)
-        box.pack(fill="x", pady=(0, 15))
-        ctk.CTkLabel(box, text=title, font=font(16, "bold"),
-                     text_color=TEXT_MAIN).pack(anchor="w", padx=20, pady=(15, 2))
-        ctk.CTkLabel(box, text=subtitle, font=font(12), text_color=TEXT_MUTED,
-                     justify="left").pack(anchor="w", padx=20)
+        box.pack(fill="x", pady=(0, 14))
+        header = ctk.CTkFrame(box, fg_color="transparent")
+        header.pack(fill="x", padx=22, pady=(18, 10))
+        if icon is not None:
+            badge = ctk.CTkFrame(header, width=36, height=36, corner_radius=10, fg_color=ACCENT_SOFT)
+            badge.pack(side="left", padx=(0, 14))
+            badge.pack_propagate(False)
+            ctk.CTkLabel(badge, text="", image=create_icon_image(icon, icon_color, 20)).pack(expand=True)
+        body = ctk.CTkFrame(header, fg_color="transparent")
+        body.pack(side="left", fill="x", expand=True)
+        title_row = ctk.CTkFrame(body, fg_color="transparent")
+        title_row.pack(fill="x")
+        ctk.CTkLabel(title_row, text=title, font=font(16, "bold"), text_color=TEXT_MAIN).pack(side="left")
+        if key is not None:
+            pill = self._status_pill(title_row)
+            pill.pack(side="right")
+            self._status_pills[key] = pill
+        ctk.CTkLabel(body, text=subtitle, font=font(12), text_color=TEXT_MUTED,
+                     justify="left").pack(anchor="w", pady=(2, 0))
+        ctk.CTkFrame(box, height=1, fg_color=BORDER).pack(fill="x", padx=22)
         return box
+
+    def _status_pill(self, parent):
+        return ctk.CTkLabel(parent, text="", font=font(11, "bold"), fg_color=BG_HOVER,
+                            text_color=TEXT_MUTED, corner_radius=10, padx=10, pady=4)
+
+    def _set_pill(self, key, text, fg=None, bg=None):
+        pill = self._status_pills.get(key)
+        if pill is None:
+            return
+        pill.configure(text=f"  {text}  ", text_color=fg or TEXT_MUTED, fg_color=bg or BG_HOVER)
 
     @staticmethod
     def _small_button(parent, text, command, primary=False, **kwargs):
@@ -54,12 +85,15 @@ class SettingsPage(BasePage):
 
     def _build_provider_card(self, parent):
         box = self._section(parent, "ผู้ให้บริการ AI",
-                            "เลือกว่าจะให้ AI Chat และ Smart Rename ประมวลผลที่ไหน")
+                            "เลือกว่าจะให้ AI Chat และ Smart Rename ประมวลผลที่ไหน",
+                            icon=Icons.SPARKLE)
         self.var_provider = ctk.StringVar(value=PROVIDER_LABELS[self.services.llm.active_name])
         ctk.CTkSegmentedButton(box, values=list(PROVIDER_LABELS.values()), variable=self.var_provider,
-                               command=self._on_provider_change).pack(fill="x", padx=20, pady=(10, 5))
-        self.lbl_privacy = ctk.CTkLabel(box, text="", font=font(13, "bold"), justify="left")
-        self.lbl_privacy.pack(anchor="w", padx=20, pady=(0, 15))
+                               command=self._on_provider_change,
+                               selected_color=ACCENT_PRIMARY, selected_hover_color=ACCENT_HOVER,
+                               ).pack(fill="x", padx=22, pady=(14, 10))
+        self.lbl_privacy = ctk.CTkLabel(box, text="", font=font(13, "bold"), justify="left", wraplength=640)
+        self.lbl_privacy.pack(anchor="w", padx=22, pady=(0, 18))
         self._refresh_privacy_label()
 
     def _on_provider_change(self, label):
@@ -86,11 +120,13 @@ class SettingsPage(BasePage):
     # ---------- ZipZap AI (Google sign-in) ----------
 
     def _build_zipzap_card(self, parent):
-        box = self._section(parent, "ZipZap AI",
-                            "login ด้วยบัญชี Google เพื่อใช้ AI ของทีมได้ฟรี วันละจำนวนจำกัด\n"
-                            "ZipZap ได้รับแค่อีเมลและชื่อ ไม่ได้รับรหัสผ่านหรือสิทธิ์เข้าถึงบัญชี Google")
-        row = ctk.CTkFrame(box, fg_color="transparent")
-        row.pack(fill="x", padx=20, pady=(10, 15))
+        self.card_zipzap = self._section(
+            parent, "ZipZap AI",
+            "login ด้วยบัญชี Google เพื่อใช้ AI ของทีมได้ฟรี วันละจำนวนจำกัด\n"
+            "ZipZap ได้รับแค่อีเมลและชื่อ ไม่ได้รับรหัสผ่านหรือสิทธิ์เข้าถึงบัญชี Google",
+            icon=Icons.PERSON, key="zipzap")
+        row = ctk.CTkFrame(self.card_zipzap, fg_color="transparent")
+        row.pack(fill="x", padx=22, pady=(14, 18))
         self.lbl_account = ctk.CTkLabel(row, text="", font=font(13, "bold"), justify="left", anchor="w")
         self.lbl_account.pack(side="left", fill="x", expand=True)
         self.btn_login = self._small_button(row, "", self._toggle_login, primary=True, width=180)
@@ -101,13 +137,17 @@ class SettingsPage(BasePage):
     def _refresh_account(self):
         if self.services.zipzap.session:
             email = self.services.config.get("zipzap_email")
-            self.lbl_account.configure(text=f"✅ login แล้ว: {email}\nกำลังตรวจโควตาวันนี้...",
+            self.lbl_account.configure(text=f"login แล้ว: {email}\nกำลังตรวจโควตาวันนี้...",
                                        text_color=ACCENT_SUCCESS)
-            self.btn_login.configure(text="Logout", state="normal")
+            self.btn_login.configure(text="Logout", state="normal",
+                                     fg_color=BG_HOVER, hover_color=BORDER, text_color=TEXT_MAIN)
+            self._set_pill("zipzap", "LOGIN แล้ว", ACCENT_SUCCESS, SUCCESS_SOFT)
             self.app.run_background(self.services.zipzap.usage, on_done=self._show_usage)
         else:
             self.lbl_account.configure(text="ยังไม่ได้ login", text_color=TEXT_MUTED)
-            self.btn_login.configure(text="Login ด้วย Google", state="normal")
+            self.btn_login.configure(text="Login ด้วย Google", state="normal",
+                                     fg_color=ACCENT_PRIMARY, hover_color=ACCENT_HOVER, text_color="#FFFFFF")
+            self._set_pill("zipzap", "ยังไม่ LOGIN", TEXT_MUTED, BG_HOVER)
         self.app.refresh_account_chip()
 
     def _show_usage(self, usage):
@@ -120,11 +160,14 @@ class SettingsPage(BasePage):
         email = self.services.config.get("zipzap_email")
         if usage is None:
             quota, color = "⚠️ ติดต่อ server ของ ZipZap ไม่ได้ ตรวจอินเทอร์เน็ต", WARNING_COLOR
+            self._set_pill("zipzap", "เชื่อมต่อไม่ได้", WARNING_COLOR, WARNING_SOFT)
         elif usage.get("remaining", 0) <= 0:
             quota, color = f"⚠️ ใช้ครบ {usage['limit']} ครั้งของวันนี้แล้ว ใช้ได้อีกครั้งหลังเที่ยงคืน", WARNING_COLOR
+            self._set_pill("zipzap", "โควตาหมด", WARNING_COLOR, WARNING_SOFT)
         else:
             quota, color = f"วันนี้ใช้ไป {usage['used']}/{usage['limit']} ครั้ง", ACCENT_SUCCESS
-        self.lbl_account.configure(text=f"✅ login แล้ว: {email}\n{quota}", text_color=color)
+            self._set_pill("zipzap", f"{usage['used']}/{usage['limit']}", ACCENT_SUCCESS, SUCCESS_SOFT)
+        self.lbl_account.configure(text=f"login แล้ว: {email}\n{quota}", text_color=color)
 
     def _toggle_login(self):
         if self._signing_in:
@@ -159,27 +202,29 @@ class SettingsPage(BasePage):
     # ---------- Gemini ----------
 
     def _build_api_card(self, parent):
-        box = self._section(parent, "Gemini API Key",
-                            "รับ key ฟรีได้ที่ aistudio.google.com\n"
-                            "key ถูกเก็บในเครื่องนี้เท่านั้น (~/.zipzap/config.json) ไม่ได้ฝังไว้ในตัวโปรแกรม")
-        row = ctk.CTkFrame(box, fg_color="transparent")
-        row.pack(fill="x", padx=20, pady=10)
+        subtitle = ("รับ key ฟรีได้ที่ aistudio.google.com\n"
+                    "key ถูกเก็บในเครื่องนี้เท่านั้น (~/.zipzap/config.json) ไม่ได้ฝังไว้ในตัวโปรแกรม")
+        self.card_gemini = self._section(parent, "Gemini API Key", subtitle, icon=Icons.EDIT, key="gemini")
+        row = ctk.CTkFrame(self.card_gemini, fg_color="transparent")
+        row.pack(fill="x", padx=22, pady=(14, 8))
         self.entry_key = ctk.CTkEntry(row, show="•", placeholder_text="วาง API key ที่นี่", fg_color=BG_SUBTLE,
-                                      text_color=TEXT_MAIN, height=34)
+                                      text_color=TEXT_MAIN, height=38, corner_radius=10)
         self.entry_key.pack(side="left", fill="x", expand=True, padx=(0, 10))
         self._small_button(row, "บันทึก", self._save_key, primary=True, width=80).pack(side="left")
         self._small_button(row, "ลบ key", self._clear_key, width=70).pack(side="left", padx=(8, 0))
-        self.lbl_key_status = ctk.CTkLabel(box, text="", font=font(13, "bold"))
-        self.lbl_key_status.pack(anchor="w", padx=20, pady=(0, 15))
+        self.lbl_key_status = ctk.CTkLabel(self.card_gemini, text="", font=font(13, "bold"))
+        self.lbl_key_status.pack(anchor="w", padx=22, pady=(0, 18))
         self._refresh_key_status()
 
     def _refresh_key_status(self):
         if self.services.gemini.is_configured:
             saved = self.services.config.get("gemini_api_key")
             source = "บันทึกไว้ใน Settings" if saved else "จาก environment / ไฟล์นักพัฒนา"
-            self.lbl_key_status.configure(text=f"✅ มี API Key แล้ว ({source})", text_color=ACCENT_SUCCESS)
+            self.lbl_key_status.configure(text=f"มี API Key แล้ว ({source})", text_color=ACCENT_SUCCESS)
+            self._set_pill("gemini", "ตั้งค่าแล้ว", ACCENT_SUCCESS, SUCCESS_SOFT)
         else:
-            self.lbl_key_status.configure(text="❌ ยังไม่มี API Key", text_color=ACCENT_DANGER)
+            self.lbl_key_status.configure(text="ยังไม่มี API Key", text_color=ACCENT_DANGER)
+            self._set_pill("gemini", "ยังไม่ตั้งค่า", ACCENT_DANGER, DANGER_SOFT)
 
     def _save_key(self):
         key = self.entry_key.get().strip()
@@ -200,12 +245,13 @@ class SettingsPage(BasePage):
     # ---------- Local AI (Ollama) ----------
 
     def _build_local_card(self, parent):
-        box = self._section(parent, "Local AI (Ollama)",
-                            "รัน AI บนเครื่องนี้ ใช้ได้แม้ไม่มีอินเทอร์เน็ต และไฟล์ไม่ถูกส่งออกไปไหน\n"
-                            "ขั้นตอน: 1) ติดตั้งโปรแกรม Ollama  2) ดาวน์โหลดโมเดล  3) กด 'ใช้โมเดลนี้'")
-
+        self.card_ollama = self._section(parent, "Local AI (Ollama)",
+                                         "รัน AI บนเครื่องนี้ ใช้ได้แม้ไม่มีอินเทอร์เน็ต และไฟล์ไม่ถูกส่งออกไปไหน\n"
+                                         "ขั้นตอน: 1) ติดตั้งโปรแกรม Ollama  2) ดาวน์โหลดโมเดล  3) กด 'ใช้โมเดลนี้'",
+                                         icon=Icons.MONITOR, key="ollama")
+        box = self.card_ollama
         status_row = ctk.CTkFrame(box, fg_color="transparent")
-        status_row.pack(fill="x", padx=20, pady=(10, 0))
+        status_row.pack(fill="x", padx=22, pady=(14, 0))
         self.lbl_ollama_status = ctk.CTkLabel(status_row, text="กำลังตรวจสอบ Ollama...", font=font(13, "bold"),
                                               text_color=TEXT_MUTED)
         self.lbl_ollama_status.pack(side="left")
@@ -221,11 +267,11 @@ class SettingsPage(BasePage):
             advice = f" → แนะนำ {self._recommended.name} (ไฟล์ประมาณ {self._recommended.size_gb} GB)"
         else:
             advice = " → RAM น้อยเกินไปสำหรับ Local AI แนะนำให้ใช้ Gemini"
-        ctk.CTkLabel(box, text=ram_text + advice, font=font(12), text_color=TEXT_MUTED).pack(anchor="w", padx=20,
+        ctk.CTkLabel(box, text=ram_text + advice, font=font(12), text_color=TEXT_MUTED).pack(anchor="w", padx=22,
                                                                                              pady=(6, 0))
 
         model_row = ctk.CTkFrame(box, fg_color="transparent")
-        model_row.pack(fill="x", padx=20, pady=(8, 0))
+        model_row.pack(fill="x", padx=22, pady=(8, 0))
         initial = self.services.ollama.model or (self._recommended or RECOMMENDED_MODELS[-1]).name
         self.var_model = ctk.StringVar(value=initial)
         self.menu_model = ctk.CTkOptionMenu(model_row, variable=self.var_model, values=[initial], width=220,
@@ -237,14 +283,14 @@ class SettingsPage(BasePage):
         self.btn_use = self._small_button(model_row, "ใช้โมเดลนี้", self._use_model, primary=True, width=110)
         self.btn_use.pack(side="left", padx=(10, 0))
         self.lbl_model_note = ctk.CTkLabel(box, text="", font=font(12), text_color=TEXT_MUTED, justify="left")
-        self.lbl_model_note.pack(anchor="w", padx=20, pady=(4, 0))
+        self.lbl_model_note.pack(anchor="w", padx=22, pady=(4, 0))
 
         self.progress = ctk.CTkProgressBar(box, progress_color=ACCENT_PRIMARY)
         self.progress.set(0)
         self.lbl_progress = ctk.CTkLabel(box, text="", font=font(12), text_color=TEXT_MUTED)
 
         url_row = ctk.CTkFrame(box, fg_color="transparent")
-        url_row.pack(fill="x", padx=20, pady=(10, 15))
+        url_row.pack(fill="x", padx=22, pady=(10, 18))
         ctk.CTkLabel(url_row, text="Ollama server", font=font(12), text_color=TEXT_MUTED).pack(side="left")
         self.entry_url = ctk.CTkEntry(url_row, fg_color=BG_SUBTLE, text_color=TEXT_MAIN, height=30)
         self.entry_url.insert(0, self.services.ollama.base_url)
@@ -263,13 +309,15 @@ class SettingsPage(BasePage):
             version, models = result
             self._installed_models = models
             if version:
-                self.lbl_ollama_status.configure(text=f"✅ Ollama ทำงานอยู่ (v{version}) — มีโมเดล {len(models)} ตัว",
+                self.lbl_ollama_status.configure(text=f"Ollama ทำงานอยู่ (v{version}) — มีโมเดล {len(models)} ตัว",
                                                  text_color=ACCENT_SUCCESS)
                 self.btn_install_ollama.pack_forget()
+                self._set_pill("ollama", "พร้อมใช้", ACCENT_SUCCESS, SUCCESS_SOFT)
             else:
-                self.lbl_ollama_status.configure(text=f"❌ ไม่พบ Ollama ที่ {ollama.base_url}",
+                self.lbl_ollama_status.configure(text=f"ไม่พบ Ollama ที่ {ollama.base_url}",
                                                  text_color=ACCENT_DANGER)
                 self.btn_install_ollama.pack(side="right", padx=(0, 10))
+                self._set_pill("ollama", "ยังไม่ได้ติดตั้ง", ACCENT_DANGER, DANGER_SOFT)
             recommended = [m.name for m in RECOMMENDED_MODELS]
             choices = recommended + [m for m in models if m not in recommended]
             self.menu_model.configure(values=choices)
@@ -365,11 +413,12 @@ class SettingsPage(BasePage):
 
     def _build_exclusions_card(self, parent):
         box = self._section(parent, "โฟลเดอร์ยกเว้น",
-                            "Cleaner, การจัดไฟล์ และ Auto Monitor จะไม่แตะไฟล์ในโฟลเดอร์เหล่านี้")
+                            "Cleaner, การจัดไฟล์ และ Auto Monitor จะไม่แตะไฟล์ในโฟลเดอร์เหล่านี้",
+                            icon=Icons.FOLDER)
         self.exclusion_list = ctk.CTkFrame(box, fg_color="transparent")
-        self.exclusion_list.pack(fill="x", padx=20, pady=(10, 0))
+        self.exclusion_list.pack(fill="x", padx=22, pady=(14, 0))
         add_button = self._small_button(box, "+ เพิ่มโฟลเดอร์", self._add_exclusion, width=140)
-        add_button.pack(anchor="w", padx=20, pady=(5, 15))
+        add_button.pack(anchor="w", padx=22, pady=(8, 18))
         self._render_exclusions()
 
     def _render_exclusions(self):
@@ -401,9 +450,10 @@ class SettingsPage(BasePage):
     # ---------- About ----------
 
     def _build_about_card(self, parent):
-        box = self._section(parent, "About ZipZap", f"Version {APP_VERSION}\nPython + CustomTkinter")
+        box = self._section(parent, "About ZipZap", f"Version {APP_VERSION}\nPython + CustomTkinter",
+                            icon=Icons.SETTINGS)
         self.lbl_about_ai = ctk.CTkLabel(box, text="", font=font(12), text_color=TEXT_MUTED, justify="left")
-        self.lbl_about_ai.pack(anchor="w", padx=20, pady=(0, 15))
+        self.lbl_about_ai.pack(anchor="w", padx=22, pady=(14, 18))
         self._refresh_about()
 
     def _refresh_about(self):

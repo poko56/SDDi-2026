@@ -1,17 +1,20 @@
 import os
 import re
+import tkinter as tk
 from tkinter import messagebox
 
 import customtkinter as ctk
 
 from core.paths import safe_join
 from ui.pages.base import BasePage
-from ui.theme import (ACCENT_HOVER, ACCENT_PRIMARY, BG_CARD, BG_HOVER, TEXT_MAIN, TEXT_MUTED, Icons,
-                      create_icon_image, font)
+from ui.theme import (ACCENT_HOVER, ACCENT_PRIMARY, BG_CARD, BG_HOVER, BORDER, TEXT_MAIN, TEXT_MUTED, Icons,
+                      create_icon_image, font, resolve_color)
 from ui.widgets import bind_mousewheel, reveal_in_file_manager
 
 OPEN_MARKER_RE = re.compile(r"(\[OPEN:\s*[^\]]*\])")
 AI_AVATAR_COLOR = "#10B981"
+WARNING_COLOR = ("#B45309", "#FBBF24")
+RING_SIZE = 22
 
 
 class AIChatPage(BasePage):
@@ -20,17 +23,7 @@ class AIChatPage(BasePage):
     PROVIDER_LABELS = {"zipzap": "ZipZap AI", "gemini": "Gemini", "ollama": "Local AI"}
 
     def build(self):
-        # Quick provider switch at the top so users don't need to hunt in Settings
-        top = ctk.CTkFrame(self, fg_color="transparent")
-        top.pack(side="top", fill="x", padx=40, pady=(0, 6))
-        ctk.CTkLabel(top, text="AI ที่ใช้:", font=font(12, "bold"),
-                     text_color=TEXT_MUTED).pack(side="left", padx=(0, 10))
-        self.var_provider = ctk.StringVar(value=self.PROVIDER_LABELS[self.services.llm.active_name])
-        self.seg_provider = ctk.CTkSegmentedButton(
-            top, values=list(self.PROVIDER_LABELS.values()), variable=self.var_provider,
-            command=self._on_provider_change, selected_color=ACCENT_PRIMARY, selected_hover_color=ACCENT_HOVER)
-        self.seg_provider.pack(side="left")
-
+        self._provider_menu = None
         bottom = ctk.CTkFrame(self, fg_color="transparent")
         bottom.pack(side="bottom", fill="x")
         self.lbl_provider = ctk.CTkLabel(bottom, text="", font=font(12), text_color=TEXT_MUTED)
@@ -49,11 +42,131 @@ class AIChatPage(BasePage):
                       corner_radius=25).pack(side="left")
         ctk.CTkButton(inputs, text="Clear", command=self._clear, fg_color="transparent", text_color=TEXT_MUTED,
                       hover_color=BG_HOVER, width=60, height=50, corner_radius=25).pack(side="left", padx=(10, 0))
+
+        # Compact model + quota ring to the right of the input, like Claude Code's status chip
+        self._build_model_chip(inputs)
         self._clear()
+
+    # ---------- Model chip + quota ring ----------
+
+    def _build_model_chip(self, parent):
+        self.chip = ctk.CTkFrame(parent, fg_color=BG_CARD, corner_radius=20, border_width=1, border_color=BORDER)
+        self.chip.pack(side="left", padx=(12, 0))
+        inner = ctk.CTkFrame(self.chip, fg_color="transparent")
+        inner.pack(padx=12, pady=6)
+        self.chip_label = ctk.CTkLabel(inner, text="", font=font(12, "bold"), text_color=TEXT_MAIN)
+        self.chip_label.pack(side="left", padx=(0, 10))
+        self.ring = tk.Canvas(inner, width=RING_SIZE, height=RING_SIZE, highlightthickness=0,
+                              bg=resolve_color(BG_CARD))
+        self.ring.pack(side="left")
+        # Click anywhere on the chip opens the provider menu
+        for widget in (self.chip, inner, self.chip_label, self.ring):
+            widget.bind("<Button-1>", lambda event: self._open_provider_menu())
+            widget.configure(cursor="hand2")
+
+    def _draw_ring(self, used, limit, color):
+        """Circular arc filled proportionally to used/limit — same idea as Claude Code's usage indicator."""
+        self.ring.delete("all")
+        pad = 2
+        box = (pad, pad, RING_SIZE - pad, RING_SIZE - pad)
+        track = resolve_color(BORDER)
+        self.ring.configure(bg=resolve_color(BG_CARD))
+        # Background track
+        self.ring.create_oval(*box, outline=track, width=3)
+        if limit > 0 and used > 0:
+            extent = -360 * min(used, limit) / limit  # Clockwise fill starting at 12 o'clock
+            self.ring.create_arc(*box, start=90, extent=extent, style="arc",
+                                 outline=resolve_color(color), width=3)
+
+    def _refresh_chip(self, usage=None):
+        """Chip text = provider · model; ring = today's usage for ZipZap AI, empty for others."""
+        llm = self.services.llm
+        name = llm.label
+        self.chip_label.configure(text=name)
+        if llm.active_name == "zipzap":
+            if usage is None:
+                # Fire off a background fetch; the ring stays empty until it returns
+                self._draw_ring(0, 1, TEXT_MUTED)
+                if self.services.zipzap.session:
+                    self.app.run_background(self.services.zipzap.usage, on_done=self._on_usage)
+                return
+            if usage.get("expired") or self.services.zipzap.session == "":
+                self._draw_ring(0, 1, WARNING_COLOR)
+                return
+            used, limit = usage.get("used", 0), usage.get("limit", 50)
+            if used >= limit:
+                color = WARNING_COLOR
+            elif used >= limit * 0.8:
+                color = ("#F59E0B", "#FBBF24")  # Amber when almost out
+            else:
+                color = ACCENT_PRIMARY
+            self._draw_ring(used, limit, color)
+            self.chip_label.configure(text=f"{name}  {used}/{limit}")
+        else:
+            # Non-ZipZap providers: no quota to show, so draw a solid dot in brand colour
+            self._draw_ring(1, 1, ACCENT_PRIMARY if llm.is_configured else WARNING_COLOR)
+
+    def _on_usage(self, usage):
+        try:
+            self._refresh_chip(usage)
+        except tk.TclError:
+            pass  # The chat page was torn down before the background fetch returned
+
+    # ---------- Provider menu ----------
+
+    def _open_provider_menu(self):
+        if self._provider_menu is not None and self._provider_menu.winfo_exists():
+            self._close_provider_menu()
+            return
+        menu = ctk.CTkFrame(self, fg_color=BG_CARD, corner_radius=12, border_width=1, border_color=BORDER)
+        self._provider_menu = menu
+        for key, label in self.PROVIDER_LABELS.items():
+            row = ctk.CTkFrame(menu, fg_color="transparent")
+            row.pack(fill="x", padx=4, pady=2)
+            active = key == self.services.llm.active_name
+            ctk.CTkButton(row, text=f"  {'✓' if active else '  '}  {label}", anchor="w",
+                          fg_color=BG_HOVER if active else "transparent", hover_color=BG_HOVER,
+                          text_color=ACCENT_PRIMARY if active else TEXT_MAIN,
+                          width=200, height=32, font=font(13, "bold" if active else "normal"),
+                          command=lambda k=key: self._pick_provider(k)).pack(fill="x")
+        menu.update_idletasks()
+        chip = self.chip
+        self.update_idletasks()
+        # Anchor the menu just above the chip
+        x = chip.winfo_rootx() - self.winfo_rootx() + chip.winfo_width() - menu.winfo_width()
+        y = chip.winfo_rooty() - self.winfo_rooty() - menu.winfo_height() - 6
+        menu.place(x=max(x, 10), y=max(y, 10))
+        self.after(10, lambda: self.bind_all("<Button-1>", self._maybe_close_menu, add="+"))
+
+    def _maybe_close_menu(self, event):
+        widget = event.widget
+        while widget is not None:
+            if widget is self._provider_menu or widget is self.chip:
+                return
+            widget = getattr(widget, "master", None)
+        self._close_provider_menu()
+
+    def _close_provider_menu(self):
+        if self._provider_menu is not None:
+            self.unbind_all("<Button-1>")
+            try:
+                self._provider_menu.destroy()
+            except tk.TclError:
+                pass
+            self._provider_menu = None
+
+    def _pick_provider(self, key):
+        self._close_provider_menu()
+        self.services.set_ai_provider(key)
+        self._refresh_provider_label()
+        self._refresh_chip()
+        self.app.log(f"🤖 เปลี่ยน AI เป็น {self.services.llm.label}")
+
+    # ---------- Provider status (bottom line) ----------
 
     def on_show(self):
         self._refresh_provider_label()
-        self.var_provider.set(self.PROVIDER_LABELS[self.services.llm.active_name])
+        self._refresh_chip()
 
     def _refresh_provider_label(self):
         llm = self.services.llm
@@ -64,12 +177,6 @@ class AIChatPage(BasePage):
         else:
             text = f"☁️ {llm.label}: {llm.model_description}"
         self.lbl_provider.configure(text=text)
-
-    def _on_provider_change(self, label):
-        name = next(k for k, v in self.PROVIDER_LABELS.items() if v == label)
-        self.services.set_ai_provider(name)
-        self._refresh_provider_label()
-        self.app.log(f"🤖 เปลี่ยน AI เป็น {self.services.llm.label}")
 
     def _history_canvas(self):
         return self.history._parent_canvas
@@ -157,6 +264,7 @@ class AIChatPage(BasePage):
         def show_reply(reply):
             loading_row.destroy()
             self._add_message(reply, is_user=False)
+            self._refresh_chip()  # Pull the new remaining-quota number from the server after each reply
 
         self.app.run_background(lambda: self.services.assistant.ask_ai(folder, question), show_reply,
                                 lambda e: show_reply(f"เกิดข้อผิดพลาด: {e}"))

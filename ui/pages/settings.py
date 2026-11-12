@@ -10,7 +10,7 @@ from ui.theme import (ACCENT_DANGER, ACCENT_HOVER, ACCENT_PRIMARY, ACCENT_SOFT, 
                       BORDER, TEXT_MAIN, TEXT_MUTED, Icons, create_icon_image, font)
 from ui.widgets import card
 
-APP_VERSION = "1.2.2"
+APP_VERSION = "1.2.3"
 OLLAMA_DOWNLOAD_URL = "https://ollama.com/download"
 WARNING_COLOR = ("#B45309", "#FBBF24")
 SUCCESS_SOFT = ("#D1FAE5", "#064E3B")

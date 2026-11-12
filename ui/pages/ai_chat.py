@@ -136,7 +136,9 @@ class AIChatPage(BasePage):
         x = chip.winfo_rootx() - self.winfo_rootx() + chip.winfo_width() - menu.winfo_width()
         y = chip.winfo_rooty() - self.winfo_rooty() - menu.winfo_height() - 6
         menu.place(x=max(x, 10), y=max(y, 10))
-        self.after(10, lambda: self.bind_all("<Button-1>", self._maybe_close_menu, add="+"))
+        # CustomTkinter blocks bind_all on CTk widgets; go through tk.Misc on the toplevel root
+        self.after(10, lambda: tk.Misc.bind_all(self.winfo_toplevel(), "<Button-1>",
+                                                self._maybe_close_menu, add="+"))
 
     def _maybe_close_menu(self, event):
         widget = event.widget
@@ -148,7 +150,7 @@ class AIChatPage(BasePage):
 
     def _close_provider_menu(self):
         if self._provider_menu is not None:
-            self.unbind_all("<Button-1>")
+            tk.Misc.unbind_all(self.winfo_toplevel(), "<Button-1>")
             try:
                 self._provider_menu.destroy()
             except tk.TclError:

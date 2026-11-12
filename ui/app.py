@@ -246,7 +246,7 @@ class ZipZapApp(ctk.CTk):
 
     def _close_account_popup(self):
         if self._account_popup is not None:
-            self.unbind_all("<Button-1>")
+            tk.Misc.unbind_all(self, "<Button-1>")
             try:
                 self._account_popup.destroy()
             except tk.TclError:
@@ -259,7 +259,8 @@ class ZipZapApp(ctk.CTk):
         self._account_popup = card
         self._fill_account_popup(card)
         # Close when the next click lands outside the card and the avatar
-        self.after(10, lambda: self.bind_all("<Button-1>", self._maybe_close_account, add="+"))
+        # CustomTkinter blocks bind_all; call tk.Misc directly on the Tk root instead
+        self.after(10, lambda: tk.Misc.bind_all(self, "<Button-1>", self._maybe_close_account, add="+"))
 
     def _maybe_close_account(self, event):
         widget = event.widget

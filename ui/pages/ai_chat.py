@@ -129,13 +129,19 @@ class AIChatPage(BasePage):
                           text_color=ACCENT_PRIMARY if active else TEXT_MAIN,
                           width=200, height=32, font=font(13, "bold" if active else "normal"),
                           command=lambda k=key: self._pick_provider(k)).pack(fill="x")
-        menu.update_idletasks()
-        chip = self.chip
         self.update_idletasks()
-        # Anchor the menu just above the chip
-        x = chip.winfo_rootx() - self.winfo_rootx() + chip.winfo_width() - menu.winfo_width()
-        y = chip.winfo_rooty() - self.winfo_rooty() - menu.winfo_height() - 6
-        menu.place(x=max(x, 10), y=max(y, 10))
+        menu.update_idletasks()
+        # Use req* because an unplaced widget's winfo_width/height is 1 until it is laid out,
+        # which would send the menu off the right edge of the window
+        menu_w = menu.winfo_reqwidth()
+        menu_h = menu.winfo_reqheight()
+        chip = self.chip
+        chip_right = chip.winfo_rootx() - self.winfo_rootx() + chip.winfo_width()
+        x = chip_right - menu_w                      # Right edge aligned to chip's right edge
+        y = chip.winfo_rooty() - self.winfo_rooty() - menu_h - 6
+        # Clamp inside the page so nothing is clipped at either edge
+        max_x = max(self.winfo_width() - menu_w - 10, 10)
+        menu.place(x=max(min(x, max_x), 10), y=max(y, 10))
         # CustomTkinter blocks bind_all on CTk widgets; go through tk.Misc on the toplevel root
         self.after(10, lambda: tk.Misc.bind_all(self.winfo_toplevel(), "<Button-1>",
                                                 self._maybe_close_menu, add="+"))

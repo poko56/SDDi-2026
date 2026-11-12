@@ -17,7 +17,20 @@ AI_AVATAR_COLOR = "#10B981"
 class AIChatPage(BasePage):
     title = "AI Help Chat"
 
+    PROVIDER_LABELS = {"zipzap": "ZipZap AI", "gemini": "Gemini", "ollama": "Local AI"}
+
     def build(self):
+        # Quick provider switch at the top so users don't need to hunt in Settings
+        top = ctk.CTkFrame(self, fg_color="transparent")
+        top.pack(side="top", fill="x", padx=40, pady=(0, 6))
+        ctk.CTkLabel(top, text="AI ที่ใช้:", font=font(12, "bold"),
+                     text_color=TEXT_MUTED).pack(side="left", padx=(0, 10))
+        self.var_provider = ctk.StringVar(value=self.PROVIDER_LABELS[self.services.llm.active_name])
+        self.seg_provider = ctk.CTkSegmentedButton(
+            top, values=list(self.PROVIDER_LABELS.values()), variable=self.var_provider,
+            command=self._on_provider_change, selected_color=ACCENT_PRIMARY, selected_hover_color=ACCENT_HOVER)
+        self.seg_provider.pack(side="left")
+
         bottom = ctk.CTkFrame(self, fg_color="transparent")
         bottom.pack(side="bottom", fill="x")
         self.lbl_provider = ctk.CTkLabel(bottom, text="", font=font(12), text_color=TEXT_MUTED)
@@ -39,6 +52,10 @@ class AIChatPage(BasePage):
         self._clear()
 
     def on_show(self):
+        self._refresh_provider_label()
+        self.var_provider.set(self.PROVIDER_LABELS[self.services.llm.active_name])
+
+    def _refresh_provider_label(self):
         llm = self.services.llm
         if not llm.is_configured:
             text = f"⚠️ {llm.not_configured_message}"
@@ -47,6 +64,12 @@ class AIChatPage(BasePage):
         else:
             text = f"☁️ {llm.label}: {llm.model_description}"
         self.lbl_provider.configure(text=text)
+
+    def _on_provider_change(self, label):
+        name = next(k for k, v in self.PROVIDER_LABELS.items() if v == label)
+        self.services.set_ai_provider(name)
+        self._refresh_provider_label()
+        self.app.log(f"🤖 เปลี่ยน AI เป็น {self.services.llm.label}")
 
     def _history_canvas(self):
         return self.history._parent_canvas
@@ -65,6 +88,7 @@ class AIChatPage(BasePage):
         ctk.CTkLabel(banner, text="Ask me to find files, explain documents, or organize your storage.",
                      font=font(16), text_color=TEXT_MUTED).pack()
         bind_mousewheel(banner, self._history_canvas())
+        self._welcome_banner = banner  # Removed as soon as the first message arrives
 
     def _message_row(self, is_user):
         row = ctk.CTkFrame(self.history, fg_color="transparent")
@@ -84,6 +108,10 @@ class AIChatPage(BasePage):
         return row, body
 
     def _add_message(self, text, is_user):
+        banner = getattr(self, "_welcome_banner", None)
+        if banner is not None and banner.winfo_exists():
+            banner.destroy()
+            self._welcome_banner = None
         row, body = self._message_row(is_user)
         self._render_body(body, text)
         bind_mousewheel(row, self._history_canvas())

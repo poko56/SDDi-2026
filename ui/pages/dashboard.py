@@ -135,9 +135,19 @@ class DashboardPage(BasePage):
         if not folder:
             self._draw_donut(None, 0)
             return
-        self.lbl_donut.configure(text="Loading...", image="")
-        self.app.run_background(lambda: self.services.analyzer.analyze(folder), self._show_stats,
-                                lambda e: self.lbl_donut.configure(text="Error"))
+        self.lbl_donut.configure(text="กำลังสแกน...", image="")
+
+        def on_progress(count):
+            self.app.call_in_ui(self._show_scan_progress, count)
+
+        self.app.run_background(lambda: self.services.analyzer.analyze(folder, on_progress=on_progress),
+                                self._show_stats, lambda e: self.lbl_donut.configure(text="Error"))
+
+    def _show_scan_progress(self, count):
+        try:
+            self.lbl_donut.configure(text=f"กำลังสแกน...\n{count:,} ไฟล์")
+        except Exception:
+            pass  # The dashboard may have been destroyed before the next update arrived
 
     def _show_stats(self, stats):
         self.lbl_docs.configure(text=f"เอกสาร ({format_size(stats.documents_bytes)})")

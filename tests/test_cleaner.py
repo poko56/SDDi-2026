@@ -54,6 +54,18 @@ def test_large_files_differing_after_quick_hash_are_not_duplicates(logger, workd
     assert names(results) == {"c.bin"}
 
 
+def test_duplicates_keep_shortest_name_as_original(logger, workdir):
+    """'a.txt' is the clean name — 'a (1).txt' and 'a_copy.txt' are the copies, not the keeper."""
+    write(workdir / "a.txt", "same")
+    write(workdir / "a (1).txt", "same")
+    write(workdir / "a_copy.txt", "same")
+
+    results = StorageCleaner(logger).scan(str(workdir), ONLY_DUPLICATES)
+
+    assert all(r.original == str(workdir / "a.txt") for r in results)
+    assert names(results) == {"a (1).txt", "a_copy.txt"}
+
+
 def test_empty_files_are_not_duplicates(logger, workdir):
     (workdir / "a.txt").write_text("")
     (workdir / "b.txt").write_text("")

@@ -128,13 +128,15 @@ class FileOrganizer:
         moved, failed = 0, 0
         with os.scandir(folder_path) as entries:
             files = [e.path for e in entries if e.is_file() and not e.name.startswith(".")]
-        for path in files:
-            try:
-                if self.organize_file(path, folder_path, strategy):
-                    moved += 1
-            except OSError as e:
-                failed += 1
-                self.logger.log_action("ERROR", f"Failed to organize {path}: {e}")
+        # Tag every move with one batch id so a single Undo click brings them all back together
+        with self.logger.batch():
+            for path in files:
+                try:
+                    if self.organize_file(path, folder_path, strategy):
+                        moved += 1
+                except OSError as e:
+                    failed += 1
+                    self.logger.log_action("ERROR", f"Failed to organize {path}: {e}")
         message = f"จัดไฟล์ตาม{strategy.label}สำเร็จ {moved} ไฟล์"
         if failed:
             message += f" (ย้ายไม่ได้ {failed} ไฟล์)"
